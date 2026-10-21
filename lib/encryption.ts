@@ -9,17 +9,9 @@ const TAG_POSITION = SALT_LENGTH + IV_LENGTH;
 const ENCRYPTED_POSITION = TAG_POSITION + TAG_LENGTH;
 
 function getEncryptionKey(): string {
-  const key = process.env.DERIV_TOKEN_ENCRYPTION_KEY;
+  const key = process.env.ENCRYPTION_KEY;
   if (!key) {
-    throw new Error('DERIV_TOKEN_ENCRYPTION_KEY environment variable is required for token encryption');
-  }
-  return key;
-}
-
-function getTelegramEncryptionKey(): string {
-  const key = process.env.TELEGRAM_SESSION_ENCRYPTION_KEY;
-  if (!key) {
-    throw new Error('TELEGRAM_SESSION_ENCRYPTION_KEY environment variable is required for Telegram session encryption');
+    throw new Error('ENCRYPTION_KEY environment variable is required for encryption');
   }
   return key;
 }
@@ -67,40 +59,6 @@ export function encrypt(text: string): string {
 }
 
 /**
- * Encrypt Telegram session using Telegram-specific encryption key
- * Returns a base64-encoded string containing salt, IV, auth tag, and encrypted data
- */
-export function encryptTelegramSession(text: string): string {
-  try {
-    const salt = crypto.randomBytes(SALT_LENGTH);
-    const iv = crypto.randomBytes(IV_LENGTH);
-    const key = deriveKey(salt, getTelegramEncryptionKey());
-
-    const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
-
-    const textBuffer = Buffer.from(text, 'utf8');
-    const encrypted = Buffer.concat([
-      cipher.update(textBuffer),
-      cipher.final()
-    ]);
-
-    const authTag = cipher.getAuthTag();
-
-    // Combine salt + iv + authTag + encrypted
-    const combined = Buffer.concat([
-      salt,
-      iv,
-      authTag,
-      encrypted
-    ]);
-
-    return combined.toString('base64');
-  } catch (error) {
-    throw new Error('Telegram session encryption failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
-  }
-}
-
-/**
  * Decrypt data that was encrypted using the encrypt function
  */
 export function decrypt(encryptedText: string): string {
@@ -125,33 +83,5 @@ export function decrypt(encryptedText: string): string {
     return decrypted.toString('utf8');
   } catch (error) {
     throw new Error('Decryption failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
-  }
-}
-
-/**
- * Decrypt Telegram session that was encrypted using encryptTelegramSession
- */
-export function decryptTelegramSession(encryptedText: string): string {
-  try {
-    const combined = Buffer.from(encryptedText, 'base64');
-
-    const salt = combined.slice(0, SALT_LENGTH);
-    const iv = combined.slice(SALT_LENGTH, TAG_POSITION);
-    const authTag = combined.slice(TAG_POSITION, ENCRYPTED_POSITION);
-    const encrypted = combined.slice(ENCRYPTED_POSITION);
-
-    const key = deriveKey(salt, getTelegramEncryptionKey());
-
-    const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
-    decipher.setAuthTag(authTag);
-
-    const decrypted = Buffer.concat([
-      decipher.update(encrypted),
-      decipher.final()
-    ]);
-
-    return decrypted.toString('utf8');
-  } catch (error) {
-    throw new Error('Telegram session decryption failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
   }
 }

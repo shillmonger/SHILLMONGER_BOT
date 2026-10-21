@@ -49,7 +49,6 @@ export async function GET() {
         createdAt: user.createdAt,
         updatedAt: user.updatedAt,
         lastLoginAt: user.lastLoginAt,
-        activeDerivAccountType: user.activeDerivAccountType,
       }
     });
   } catch (error) {

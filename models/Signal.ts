@@ -2,9 +2,9 @@ import mongoose, { Schema, Document, Model } from 'mongoose';
 
 export interface ISignal extends Document {
   _id: mongoose.Types.ObjectId;
-  telegramMessageId: number;
+  sourceMessageId: string;
   aiMessageId: mongoose.Types.ObjectId;
-  telegramGroupId: string;
+  sourceGroupId: string;
   providerId: mongoose.Types.ObjectId;
   symbol: string;
   direction: 'BUY' | 'SELL';
@@ -20,22 +20,22 @@ export interface ISignal extends Document {
 
 const SignalSchema: Schema<ISignal> = new Schema(
   {
-    telegramMessageId: {
-      type: Number,
-      required: [true, 'Telegram Message ID is required'],
+    sourceMessageId: {
+      type: String,
+      required: [true, 'Source Message ID is required'],
     },
     aiMessageId: {
       type: Schema.Types.ObjectId,
       ref: 'AIMessage',
       required: [true, 'AI Message ID is required'],
     },
-    telegramGroupId: {
+    sourceGroupId: {
       type: String,
-      required: [true, 'Telegram Group ID is required'],
+      required: [true, 'Source Group ID is required'],
     },
     providerId: {
       type: Schema.Types.ObjectId,
-      ref: 'TelegramProvider',
+      ref: 'Provider',
       required: [true, 'Provider ID is required'],
     },
     symbol: {
@@ -78,8 +78,8 @@ const SignalSchema: Schema<ISignal> = new Schema(
   }
 );
 
-// Unique index on telegramGroupId + telegramMessageId to prevent duplicate signals
-SignalSchema.index({ telegramGroupId: 1, telegramMessageId: 1 }, { unique: true });
+// Unique index on sourceGroupId + sourceMessageId to prevent duplicate signals
+SignalSchema.index({ sourceGroupId: 1, sourceMessageId: 1 }, { unique: true });
 // Index for aiMessageId reference
 SignalSchema.index({ aiMessageId: 1 });
 // Index for provider lookup

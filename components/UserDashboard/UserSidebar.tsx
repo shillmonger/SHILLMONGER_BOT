@@ -77,7 +77,6 @@ export default function UserSidebar({
   const [unreadCount, setUnreadCount] = useState(0);
 
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
-    "Bind Account": true,
     "Earn Free USDT": true,
     Account: true,
     Withdrawals: true,
@@ -136,23 +135,6 @@ export default function UserSidebar({
   const navItems: NavItem[] = [
   { name: "Dashboard", icon: LayoutDashboard, href: `${basePath}/dashboard` },
         { name: "Subscription", icon: Wallet, href: `${basePath}/subscription` },
-   {
-      name: "Bind Account",
-      icon: Unplug,
-      children: [
-        {
-          name: "Connect Deriv",
-          icon: DatabasePlus,
-          href: `${basePath}/connect-deriv`,
-        },
-        {
-          name: "How to Connect",
-          icon: BadgeQuestionMark,
-          href: `${basePath}/setup`,
-        },
-      ],
-    },
-
     { name: "Trade History", icon: Layers, href: `${basePath}/live-trading` },
     { name: "Transactions", icon: History, href: `${basePath}/transactions` },
     { name: "Predict Market", icon: BarChart3, href: `${basePath}/predict` },

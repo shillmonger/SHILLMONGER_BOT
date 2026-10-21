@@ -53,7 +53,6 @@ interface UserData {
   createdAt: string;
   updatedAt: string;
   lastLoginAt?: string;
-  activeDerivAccountType?: string;
 }
 
 const GOLD = "#D4AF37";
