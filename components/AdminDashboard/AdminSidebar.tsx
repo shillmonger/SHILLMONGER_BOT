@@ -81,7 +81,7 @@ export default function AdminSidebar({
     // === MAIN ===
     { name: "Overview", icon: LayoutDashboard, href: `${basePath}/dashboard` },
     { name: "Bot Billing", icon: BadgeCheck, href: `${basePath}/bot-billing` },
-    { name: "Bot Providers", icon: Users, href: `${basePath}/providers` },
+    { name: "TG Providers", icon: Users, href: `${basePath}/providers` },
     { name: "Bot Analytics", icon: PieChart, href: `${basePath}/my-investments` },
     {
       name: "Audit logs",
