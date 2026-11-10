@@ -22,6 +22,19 @@ function getBotConfig(): BotConfig {
   };
 }
 
+/**
+ * Returns "host[:port]" for diagnostics, or null when the URL is invalid.
+ * Never includes credentials, query strings, or keys.
+ */
+function safeHost(url: string): string | null {
+  try {
+    const u = new URL(url);
+    return u.host;
+  } catch {
+    return null;
+  }
+}
+
 export function isBotConfigured(): boolean {
   const { url } = getBotConfig();
   return Boolean(url);
@@ -54,6 +67,14 @@ export async function botFetch(
   } = {}
 ): Promise<BotResponse> {
   const { url, adminKey, frontendKey } = getBotConfig();
+  const host = safeHost(url);
+  const hasAdminKey = Boolean(adminKey);
+  const hasFrontendKey = Boolean(frontendKey);
+  const { method = "GET", key = "none", body, query, timeoutMs = 10000 } = options;
+
+  console.log(
+    `[bot] request ${method} ${path} -> configured=${Boolean(url)} host=${host ?? "invalid"} authKey=${key === "admin" ? `admin(present=${hasAdminKey})` : key === "frontend" ? `frontend(present=${hasFrontendKey})` : "none"}`
+  );
 
   if (!url) {
     return {
@@ -62,8 +83,6 @@ export async function botFetch(
       data: { error: "Bot service is not configured (BOT_API_URL missing)" },
     };
   }
-
-  const { method = "GET", key = "none", body, query, timeoutMs = 10000 } = options;
 
   let target = `${url}${path}`;
   if (query) {
@@ -82,6 +101,7 @@ export async function botFetch(
     headers["Authorization"] = `Bearer ${frontendKey}`;
 
   try {
+    console.log(`[bot] fetch start ${method} ${host}${path}`);
     const response = await fetch(target, {
       method,
       headers,
@@ -89,6 +109,7 @@ export async function botFetch(
       signal: AbortSignal.timeout(timeoutMs),
       cache: "no-store",
     });
+    console.log(`[bot] fetch completed ${method} ${host}${path} -> HTTP ${response.status}`);
 
     let data: unknown = null;
     const text = await response.text();
@@ -105,6 +126,18 @@ export async function botFetch(
     const isTimeout =
       error instanceof Error &&
       (error.name === "TimeoutError" || error.name === "AbortError");
+    // Log only safe diagnostic fields — never headers or keys.
+    const errName = error instanceof Error ? error.name : typeof error;
+    const errMessage = error instanceof Error ? error.message : String(error);
+    const errCause =
+      error instanceof Error && error.cause instanceof Error
+        ? `${error.cause.name}:${(error.cause as NodeJS.ErrnoException).code ?? error.cause.message}`
+        : error instanceof Error && error.cause
+          ? String(error.cause)
+          : "none";
+    console.error(
+      `[bot] fetch failed ${method} ${host}${path} -> name=${errName} message=${errMessage} cause=${errCause}`
+    );
     return {
       ok: false,
       status: 502,
