@@ -54,7 +54,7 @@ export default function AdminDashboardPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [stats, setStats] = useState<DashboardStats[]>([]);
   const [recentTransactions, setRecentTransactions] = useState<Transaction[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   const iconMap: { [key: string]: any } = {
     Users,
@@ -76,7 +76,7 @@ export default function AdminDashboardPage() {
   };
 
   useEffect(() => {
-    fetchDashboardData();
+    // fetchDashboardData(); // TODO: Create /api/admin/dashboard route
   }, []);
 
   const fetchDashboardData = async () => {
@@ -152,11 +152,11 @@ export default function AdminDashboardPage() {
   };
 
   return (
-    <div className="flex h-screen bg-background">
+    <div className="flex h-full w-full min-w-0 bg-background overflow-x-clip">
 
-      <div className="flex-1 flex flex-col py-5">
+      <div className="flex-1 flex w-full min-w-0 flex-col py-5">
 
-        <main className="flex-1">
+        <main className="flex-1 w-full min-w-0 overflow-x-clip">
           {/* Header */}
           <div className="mb-8">
             <h1 className="text-2xl md:text-2xl font-black uppercase tracking-tighter leading-none flex items-center gap-4">Dashboard Overview</h1>
@@ -170,7 +170,7 @@ export default function AdminDashboardPage() {
           <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
             {loading ? (
               Array.from({ length: 46 }).map((_, i) => (
-                <div key={i} className="bg-card p-5 rounded-2xl border border-border shadow-sm">
+                <div key={i} className="min-w-0 bg-card p-5 rounded-2xl border border-border shadow-sm">
                   <div className="flex items-center justify-between mb-4">
                     <div className="p-2 rounded-xl bg-muted animate-pulse">
                       <div className="w-5 h-5 bg-muted-foreground/20 rounded"></div>
@@ -185,7 +185,7 @@ export default function AdminDashboardPage() {
               ))
             ) : (
               stats.map((stat, index) => (
-                <div key={index} className="bg-card px-5 py-3 rounded-2xl border border-border shadow-sm hover:shadow-md transition-shadow">
+                <div key={index} className="min-w-0 bg-card px-5 py-3 rounded-2xl border border-border shadow-sm hover:shadow-md transition-shadow">
                   <div className="flex items-center justify-between mb-4">
                     <div className={`p-2 rounded-xl ${stat.bg}`}>
                       <stat.icon className={`w-5 h-5 ${stat.color}`} />
@@ -193,8 +193,8 @@ export default function AdminDashboardPage() {
                     <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Live</span>
                   </div>
                   <div>
-                    <p className="text-xl font-bold text-foreground mb-1">{stat.value}</p>
-                    <h4 className="text-muted-foreground text-xs font-medium">{stat.label}</h4>
+                    <p className="truncate text-xl font-bold text-foreground mb-1">{stat.value}</p>
+                    <h4 className="text-muted-foreground text-xs font-medium break-words">{stat.label}</h4>
                   </div>
                 </div>
               ))

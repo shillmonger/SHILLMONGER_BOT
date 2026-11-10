@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/auth-helper';
+import { normalizePfpPath } from '@/lib/pfp';
 
 export async function GET() {
   try {
@@ -18,7 +19,7 @@ export async function GET() {
         _id: user._id,
         userName: user.userName,
         email: user.email,
-        avatar: user.avatar,
+        avatar: normalizePfpPath(user.avatar),
         emailVerified: user.emailVerified,
         role: user.role,
         status: user.status,

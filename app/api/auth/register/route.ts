@@ -4,6 +4,7 @@ import User from '@/models/User';
 import { hashPassword, generateVerificationToken } from '@/lib/auth';
 import { sendEmail, getVerificationEmail } from '@/lib/email';
 import { getAppUrl } from '@/lib/config';
+import { pickRandomPfp } from '@/lib/pfp';
 
 export async function POST(request: NextRequest) {
   try {
@@ -53,8 +54,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Generate random avatar
-    const avatarNumber = Math.floor(Math.random() * 33) + 1;
-    const avatar = `/PFP_IMG/${avatarNumber}.jfif`;
+    const avatar = pickRandomPfp();
 
     // Hash password
     const passwordHash = await hashPassword(password);

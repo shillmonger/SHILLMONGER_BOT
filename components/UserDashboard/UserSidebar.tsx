@@ -6,49 +6,19 @@ import { usePathname, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   LayoutDashboard,
-  BarChart3,
-  BadgeCheck,
-  Package,
-  Layers,
-  MessagesSquare,
-  ChartColumnBig,
-  Landmark,
-  ArrowRightLeft,
-  Trophy,
-  TrendingUpDown,
-  BanknoteArrowUp,
-  DatabasePlus,
-  Unplug,
-  UsersRound,
-  BadgeQuestionMark,
-  Swords,
-  TrendingUp,
-  ChartSpline,
-  Smile,
-  CalendarDays,
-  ChartNoAxesCombined,
-  Award,
-  CandlestickChart,
-  Bitcoin,
-  Wallet,
-  Info,
-  Lightbulb,
-  Gift,
-  History,
-  Crown,
-  ArrowUpRight,
-  PieChart,
-  Gem,
-  Users,
-  Lock,
-  HeadphonesIcon,
-  Bell,
+  Radio,
   Settings,
+  Lock,
   LogOut,
-  BadgeDollarSign,
   ChevronDown,
-  PartyPopper,
-  MessageSquare,
+  Wallet,
+  UsersRound,
+  Trophy,
+  Users,
+  BarChart3,
+  History,
+  PieChart,
+  Layers,
   X,
 } from "lucide-react";
 
@@ -60,10 +30,10 @@ interface SidebarProps {
 type NavItem =
   | { name: string; icon: React.ElementType; href: string }
   | {
-      name: string;
-      icon: React.ElementType;
-      children: { name: string; icon: React.ElementType; href: string }[];
-    };
+    name: string;
+    icon: React.ElementType;
+    children: { name: string; icon: React.ElementType; href: string }[];
+  };
 
 export default function UserSidebar({
   sidebarOpen,
@@ -133,39 +103,37 @@ export default function UserSidebar({
 
 
   const navItems: NavItem[] = [
-  { name: "Dashboard", icon: LayoutDashboard, href: `${basePath}/dashboard` },
-        { name: "Subscription", icon: Wallet, href: `${basePath}/subscription` },
-    { name: "Trade History", icon: Layers, href: `${basePath}/live-trading` },
+    { name: "Dashboard", icon: LayoutDashboard, href: `${basePath}/dashboard` },
+    { name: "Subscription", icon: Wallet, href: `${basePath}/subscription` },
+    { name: "Trade History", icon: Layers, href: `${basePath}/signals` },
     { name: "Transactions", icon: History, href: `${basePath}/transactions` },
     { name: "Predict Market", icon: BarChart3, href: `${basePath}/predict` },
 
-  {
-    name: "Community",
-    icon: Users,
-    children: [
-      { name: "TG Channel", icon: UsersRound, href: `#` },
-      { name: "Top Leaderboard", icon: Trophy, href: `${basePath}/leaderboard` },
-    ],
-  },
+    {
+      name: "Community",
+      icon: Users,
+      children: [
+        { name: "TG Channel", icon: UsersRound, href: `#` },
+        { name: "Top Leaderboard", icon: Trophy, href: `${basePath}/leaderboard` },
+      ],
+    },
 
-  { name: "Trade Analytics", icon: PieChart, href: `${basePath}/analytics` },
-
-      {
-        name: "Profile Settings",
-        icon: Settings,
-        href: `${basePath}/account-setting`,
-      },
-      ...(userRole.includes("admin")
-        ? [
-            {
-              name: "Switch to Admin",
-              icon: Lock,
-              href: `/AdminDashboard/dashboard`,
-            },
-          ]
-        : []),
-
-];
+    { name: "Trade Analytics", icon: PieChart, href: `${basePath}/analytics` },
+    {
+      name: "Profile Settings",
+      icon: Settings,
+      href: `${basePath}/account-setting`,
+    },
+    ...(userRole.includes("admin")
+      ? [
+        {
+          name: "Switch to Admin",
+          icon: Lock,
+          href: `/AdminDashboard/dashboard`,
+        },
+      ]
+      : []),
+  ];
 
 
 
@@ -212,16 +180,14 @@ export default function UserSidebar({
                 <Link
                   key={item.name}
                   href={item.href}
-                  className={`group flex items-center px-4 py-2.5 rounded-lg transition-all duration-200 ${
-                    active
+                  className={`group flex items-center px-4 py-2.5 rounded-lg transition-all duration-200 ${active
                       ? "bg-[#D4AF37] text-black shadow-lg shadow-[#D4AF37]/30"
                       : "text-muted-foreground hover:bg-secondary hover:text-foreground"
-                  }`}
+                    }`}
                 >
                   <item.icon
-                    className={`w-5 h-5 mr-5 transition-transform ${
-                      active ? "scale-110" : "group-hover:scale-110"
-                    }`}
+                    className={`w-5 h-5 mr-5 transition-transform ${active ? "scale-110" : "group-hover:scale-110"
+                      }`}
                   />
                   <span className="text-[12px] font-black uppercase tracking-widest">
                     {item.name}
@@ -239,24 +205,21 @@ export default function UserSidebar({
               <div key={item.name} className="flex flex-col">
                 <button
                   onClick={() => toggleGroup(item.name)}
-                  className={`group w-full flex items-center px-4 py-2.5 rounded-sm transition-all duration-200 cursor-pointer ${
-                    hasActiveChild
+                  className={`group w-full flex items-center px-4 py-2.5 rounded-sm transition-all duration-200 cursor-pointer ${hasActiveChild
                       ? "text-[#D4AF37]"
                       : "text-muted-foreground hover:bg-secondary hover:text-foreground"
-                  }`}
+                    }`}
                 >
                   <item.icon
-                    className={`w-5 h-5 mr-5 transition-transform ${
-                      hasActiveChild ? "scale-110" : "group-hover:scale-110"
-                    }`}
+                    className={`w-5 h-5 mr-5 transition-transform ${hasActiveChild ? "scale-110" : "group-hover:scale-110"
+                      }`}
                   />
                   <span className="flex-1 text-left text-[12px] font-black uppercase tracking-widest">
                     {item.name}
                   </span>
                   <ChevronDown
-                    className={`w-4 h-4 transition-transform duration-300 ${
-                      isOpen ? "rotate-180" : ""
-                    }`}
+                    className={`w-4 h-4 transition-transform duration-300 ${isOpen ? "rotate-180" : ""
+                      }`}
                   />
                 </button>
 
@@ -271,18 +234,16 @@ export default function UserSidebar({
                         <Link
                           key={child.name}
                           href={child.href}
-                          className={`group flex items-center gap-3 px-3 py-2 rounded-sm transition-all duration-200 ${
-                            childActive
+                          className={`group flex items-center gap-3 px-3 py-2 rounded-sm transition-all duration-200 ${childActive
                               ? "bg-[#D4AF37] text-black shadow-lg shadow-[#D4AF37]/30"
                               : "text-muted-foreground hover:bg-secondary hover:text-foreground"
-                          }`}
+                            }`}
                         >
                           <child.icon
-                            className={`w-4 h-4 flex-shrink-0 transition-transform ${
-                              childActive
+                            className={`w-4 h-4 flex-shrink-0 transition-transform ${childActive
                                 ? "scale-110"
                                 : "group-hover:scale-110"
-                            }`}
+                              }`}
                           />
                           <span className="text-[11px] font-black uppercase tracking-widest">
                             {child.name}
@@ -353,17 +314,15 @@ export default function UserSidebar({
                     <Link
                       key={item.name}
                       href={item.href}
-                      className={`group flex items-center px-4 py-2.5 rounded-sm transition-all duration-200 ${
-                        active
+                      className={`group flex items-center px-4 py-2.5 rounded-sm transition-all duration-200 ${active
                           ? "bg-[#D4AF37] text-black shadow-lg shadow-[#D4AF37]/30"
                           : "text-muted-foreground hover:bg-secondary hover:text-foreground"
-                      }`}
+                        }`}
                       onClick={() => setSidebarOpen(false)}
                     >
                       <item.icon
-                        className={`w-5 h-5 mr-5 transition-transform ${
-                          active ? "scale-110" : "group-hover:scale-110"
-                        }`}
+                        className={`w-5 h-5 mr-5 transition-transform ${active ? "scale-110" : "group-hover:scale-110"
+                          }`}
                       />
                       <span className="text-[12px] font-black uppercase tracking-widest">
                         {item.name}
@@ -381,24 +340,21 @@ export default function UserSidebar({
                   <div key={item.name} className="flex flex-col">
                     <button
                       onClick={() => toggleGroup(item.name)}
-                      className={`group w-full flex items-center px-4 py-2.5 rounded-sm transition-all duration-200 cursor-pointer ${
-                        hasActiveChild
+                      className={`group w-full flex items-center px-4 py-2.5 rounded-sm transition-all duration-200 cursor-pointer ${hasActiveChild
                           ? "text-[#D4AF37]"
                           : "text-muted-foreground hover:bg-secondary hover:text-foreground"
-                      }`}
+                        }`}
                     >
                       <item.icon
-                        className={`w-5 h-5 mr-5 transition-transform ${
-                          hasActiveChild ? "scale-110" : "group-hover:scale-110"
-                        }`}
+                        className={`w-5 h-5 mr-5 transition-transform ${hasActiveChild ? "scale-110" : "group-hover:scale-110"
+                          }`}
                       />
                       <span className="flex-1 text-left text-[12px] font-black uppercase tracking-widest">
                         {item.name}
                       </span>
                       <ChevronDown
-                        className={`w-4 h-4 transition-transform duration-300 ${
-                          isOpen ? "rotate-180" : ""
-                        }`}
+                        className={`w-4 h-4 transition-transform duration-300 ${isOpen ? "rotate-180" : ""
+                          }`}
                       />
                     </button>
 
@@ -413,19 +369,17 @@ export default function UserSidebar({
                             <Link
                               key={child.name}
                               href={child.href}
-                              className={`group flex items-center gap-3 px-3 py-2 rounded-sm transition-all duration-200 ${
-                                childActive
+                              className={`group flex items-center gap-3 px-3 py-2 rounded-sm transition-all duration-200 ${childActive
                                   ? "bg-[#D4AF37] text-black shadow-lg shadow-[#D4AF37]/30"
                                   : "text-muted-foreground hover:bg-secondary hover:text-foreground"
-                              }`}
+                                }`}
                               onClick={() => setSidebarOpen(false)}
                             >
                               <child.icon
-                                className={`w-4 h-4 flex-shrink-0 transition-transform ${
-                                  childActive
+                                className={`w-4 h-4 flex-shrink-0 transition-transform ${childActive
                                     ? "scale-110"
                                     : "group-hover:scale-110"
-                                }`}
+                                  }`}
                               />
                               <span className="text-[11px] font-black uppercase tracking-widest">
                                 {child.name}

@@ -148,12 +148,13 @@ export default function UserHeader({
               </>
             )}
           </div>
-          <Avatar className="h-10 w-10 border-2 border-border">
+          <Avatar className="h-10 w-10 border-2 border-border rounded-lg">
             <AvatarImage 
               src={user.avatar || defaultProfileImage} 
               alt={user.userName} 
+              className="rounded-lg"
             />
-            <AvatarFallback className="bg-primary text-primary-foreground font-semibold">
+            <AvatarFallback className="bg-primary text-primary-foreground font-semibold rounded-lg">
               {user.userName?.charAt(0).toUpperCase() || "U"}
             </AvatarFallback>
           </Avatar>

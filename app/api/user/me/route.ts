@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 import { verifyToken } from '@/lib/auth';
 import User from '@/models/User';
 import connectDB from '@/lib/db';
+import { normalizePfpPath } from '@/lib/pfp';
 
 export async function GET() {
   try {
@@ -40,7 +41,7 @@ export async function GET() {
         _id: user._id,
         username: user.userName,
         email: user.email,
-        avatar: user.avatar,
+        avatar: normalizePfpPath(user.avatar),
         phone: user.phone,
         country: user.country,
         emailVerified: user.emailVerified,

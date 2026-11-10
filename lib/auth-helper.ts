@@ -38,3 +38,16 @@ export async function requireAuth() {
   }
   return user;
 }
+
+/**
+ * Returns the authenticated user only when they have the admin role.
+ * Returns null for anonymous users and non-admin users alike — callers
+ * should map null to 401/403 as appropriate.
+ */
+export async function getAdminUser() {
+  const user = await getCurrentUser();
+  if (!user || user.role !== 'admin') {
+    return null;
+  }
+  return user;
+}

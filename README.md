@@ -1,4 +1,31 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# SHILLMONGER / XAU PRIME
+
+Next.js frontend + admin dashboard for the SHILLMONGER Python Telegram
+signal-monitoring service (`SHILLMONGER_BOT/`). The Python service owns
+Telegram connectivity (Telethon), signal parsing/validation/dedup, and
+signal storage in the shared `my-trading-bot` MongoDB database. This app
+provides authentication, admin/user dashboards, provider management, and
+secure server-side API proxies to the bot.
+
+## Environment variables
+
+See `.env.local`. Bot integration variables (server-side only — never
+expose to the browser):
+
+```
+BOT_API_URL=http://localhost:8000        # Python FastAPI service URL
+BOT_ADMIN_API_KEY=...                    # Bearer key for admin bot endpoints
+BOT_FRONTEND_API_KEY=...                 # Bearer key for user-facing bot endpoints
+NEXT_PUBLIC_BOT_API_URL=http://localhost:8000  # public URL, health checks only
+```
+
+The Python service keeps its own env config in `SHILLMONGER_BOT/.env`
+(`API_ID`, `API_HASH`, `PHONE_NUMBER`, `MONGODB_URI`, `BACKEND_URL`,
+`WORKER_HMAC_SECRET`, `FRONTEND_API_KEY`, `ADMIN_API_KEY`,
+`TELEGRAM_SESSION_STRING`, `SUPPORTED_SYMBOLS`, `DEFAULT_SYMBOL`,
+`TELEGRAM_AUTO_START`, `ALLOW_INTERACTIVE_LOGIN`, `SERVER_PORT`).
+`BACKEND_URL` there is the worker's own forwarding target — it is unrelated
+to `BOT_API_URL`.
 
 ## Getting Started
 

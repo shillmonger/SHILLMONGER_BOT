@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 import { verifyToken } from '@/lib/auth';
 import User from '@/models/User';
 import connectDB from '@/lib/db';
+import { normalizePfpPath } from '@/lib/pfp';
 
 export async function PATCH(request: NextRequest) {
   try {
@@ -95,7 +96,7 @@ export async function PATCH(request: NextRequest) {
         _id: updatedUser._id,
         username: updatedUser.userName,
         email: updatedUser.email,
-        avatar: updatedUser.avatar,
+        avatar: normalizePfpPath(updatedUser.avatar),
         phone: updatedUser.phone,
         country: updatedUser.country,
         emailVerified: updatedUser.emailVerified,

@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect } from "react";
 import { toast } from "sonner";
+import { useTheme } from "next-themes";
+import { useMounted } from "@/hooks/useMounted";
 import {
   User,
   Lock,
@@ -16,6 +18,9 @@ import {
   ShieldAlert,
   Image as ImageIcon,
   X,
+  Palette,
+  Moon,
+  Sun,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -57,7 +62,17 @@ interface UserData {
 
 const GOLD = "#D4AF37";
 
+// Maps legacy "/PFP_IMG/<n>.jfif" paths to the renamed "pfp<n>.jpg" files.
+const normalizeAvatarPath = (avatar?: string | null): string | undefined =>
+  avatar?.replace(/\/PFP_IMG\/(\d+)\.jfif$/i, "/PFP_IMG/pfp$1.jpg");
+
 export default function UserSettingsPage() {
+  // --- Theme state ---
+  const mounted = useMounted();
+  const { theme, setTheme } = useTheme();
+  const darkMode = theme === "dark";
+  const toggleTheme = () => setTheme(darkMode ? "light" : "dark");
+
   // --- Personal Info State ---
   const [personalInfo, setPersonalInfo] = useState<PersonalInfo>({
     username: "",
@@ -91,44 +106,24 @@ export default function UserSettingsPage() {
   // --- Profile Image Picker State ---
   const [showImagePicker, setShowImagePicker] = useState(false);
   const [isUpdatingImage, setIsUpdatingImage] = useState(false);
-  const availableImages = [
-    "/PFP_IMG/1.jfif",
-    "/PFP_IMG/2.jfif",
-    "/PFP_IMG/3.jfif",
-    "/PFP_IMG/4.jfif",
-    "/PFP_IMG/5.jfif",
-    "/PFP_IMG/6.jfif",
-    "/PFP_IMG/7.jfif",
-    "/PFP_IMG/8.jfif",
-    "/PFP_IMG/9.jfif",
-    "/PFP_IMG/10.jfif",
-    "/PFP_IMG/11.jfif",
-    "/PFP_IMG/12.jfif",
-    "/PFP_IMG/13.jfif",
-    "/PFP_IMG/14.jfif",
-    "/PFP_IMG/15.jfif",
-    "/PFP_IMG/16.jfif",
-    "/PFP_IMG/17.jfif",
-    "/PFP_IMG/18.jfif",
-    "/PFP_IMG/19.jfif",
-    "/PFP_IMG/20.jfif",
-    "/PFP_IMG/21.jfif",
-    "/PFP_IMG/22.jfif",
-    "/PFP_IMG/23.jfif",
-    "/PFP_IMG/24.jfif",
-    "/PFP_IMG/25.jfif",
-    "/PFP_IMG/26.jfif",
-    "/PFP_IMG/27.jfif",
-    "/PFP_IMG/28.jfif",
-    "/PFP_IMG/29.jfif",
-    "/PFP_IMG/30.jfif",
-    "/PFP_IMG/31.jfif",
-    "/PFP_IMG/32.jfif",
-    "/PFP_IMG/33.jfif",
-  ];
+  const [availableImages, setAvailableImages] = useState<string[]>([]);
 
   // --- Fetch User Data ---
   useEffect(() => {
+    const fetchPfpImages = async () => {
+      try {
+        const response = await fetch('/api/pfp-images');
+        const data = await response.json();
+        if (response.ok && Array.isArray(data.images)) {
+          setAvailableImages(data.images);
+        }
+      } catch (error) {
+        console.error('Error fetching profile images:', error);
+      }
+    };
+
+    fetchPfpImages();
+
     const fetchUserData = async () => {
       try {
         const response = await fetch('/api/user/me');
@@ -141,7 +136,7 @@ export default function UserSettingsPage() {
             email: user.email,
             phone: user.phone || "",
             country: user.country || "",
-            profileImage: user.avatar || "/PFP_IMG/14.jfif",
+            profileImage: normalizeAvatarPath(user.avatar) || "/PFP_IMG/pfp14.jpg",
             emailVerified: user.emailVerified,
             createdAt: user.createdAt,
             role: user.role,
@@ -177,7 +172,7 @@ export default function UserSettingsPage() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           username: personalInfo.username,
           phone: personalInfo.phone,
           country: personalInfo.country,
@@ -315,7 +310,7 @@ export default function UserSettingsPage() {
       const data = await response.json();
 
       if (response.ok) {
-        setPersonalInfo((prev) => ({ ...prev, profileImage: data.avatar || imagePath }));
+        setPersonalInfo((prev) => ({ ...prev, profileImage: normalizeAvatarPath(data.avatar) || imagePath }));
         toast.success("Profile image updated successfully");
         setShowImagePicker(false);
       } else {
@@ -352,7 +347,7 @@ export default function UserSettingsPage() {
 
             {/* Left and Right Grid Layout */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              
+
               {/* LEFT COLUMN: Sidebar Card (Quick Identity Overview & Status) */}
               <div className="space-y-6 lg:sticky lg:top-4 lg:self-start">
                 <Card className="border-border/50 shadow-sm">
@@ -363,23 +358,23 @@ export default function UserSettingsPage() {
                   </CardHeader>
                   <CardContent>
                     <div className="flex flex-col items-center text-center justify-center">
-                      <div className="relative">
-                        <div className="relative w-40 h-40 flex items-center text-center justify-center rounded-xl overflow-hidden border-2 border-border bg-muted shadow-lg mb-4">
-                          {personalInfo.profileImage ? (
-                            <img
-                              src={personalInfo.profileImage}
-                              alt="Profile"
-                              className="w-full h-full object-cover"
-                            />
-                          ) : (
-                            <User className="w-10 h-10 text-muted-foreground" />
-                          )}
-                        </div>
+                      <div className="relative w-40 h-40 flex items-center text-center justify-center rounded-xl overflow-hidden border-2 border-border bg-muted shadow-lg mb-4">
+                        {personalInfo.profileImage ? (
+                          <img
+                            src={personalInfo.profileImage}
+                            alt="Profile"
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <User className="w-10 h-10 text-muted-foreground" />
+                        )}
+
+                        {/* Button is now inside the container and respects overflow-hidden */}
                         <button
                           onClick={() => setShowImagePicker(true)}
-                          className="absolute bottom-3 right-0 bg-white border border-border p-1.5 rounded-lg hover:bg-muted transition-colors cursor-pointer dark:bg-zinc-950 dark:text-white"
+                          className="absolute bottom-0 right-0 bg-white border border-border p-1.5 rounded-none hover:bg-muted transition-colors cursor-pointer dark:bg-zinc-950 dark:text-white shadow-md"
                         >
-                          <ImageIcon className="w-4 h-4" />
+                          <ImageIcon className="w-5 h-5" />
                         </button>
                       </div>
                       <h4 className="text-base font-bold uppercase tracking-tight">
@@ -420,11 +415,37 @@ export default function UserSettingsPage() {
                     </div>
                   </CardContent>
                 </Card>
+
+                {/* Appearance */}
+                <div className="bg-card rounded-2xl shadow-lg border border-border p-6">
+                  <h3 className="text-sm font-black uppercase tracking-widest mb-6 flex items-center gap-2">
+                    <Palette className="w-4 h-4 text-primary" /> Appearance
+                  </h3>
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-bold">Dark Mode</p>
+                    {mounted ? (
+                      <button
+                        onClick={toggleTheme}
+                        className={`relative w-14 h-8 rounded-full cursor-pointer border border-border transition-colors ${darkMode ? "bg-primary" : "bg-muted"}`}
+                      >
+                        <div className={`absolute top-1 w-6 h-6 rounded-full bg-white shadow-md transition-transform flex items-center justify-center ${darkMode ? "translate-x-6" : "translate-x-1"}`}>
+                          {darkMode ? <Moon className="w-3.5 h-3.5 text-black" /> : <Sun className="w-3.5 h-3.5 text-yellow-500" />}
+                        </div>
+                      </button>
+                    ) : (
+                      <div className="relative w-14 h-8 rounded-full border border-border bg-muted">
+                        <div className="absolute top-1 w-6 h-6 rounded-full bg-white shadow-md transition-transform flex items-center justify-center translate-x-1">
+                          <Sun className="w-3.5 h-3.5 text-yellow-500" />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
 
               {/* RIGHT COLUMN: Action Blocks */}
               <div className="lg:col-span-2 space-y-8">
-                
+
                 {/* Component 1: Account Information Form */}
                 <Card className="border-border/50 shadow-sm">
                   <CardHeader>
@@ -685,12 +706,13 @@ export default function UserSettingsPage() {
 
       {/* Profile Image Picker Modal */}
       {showImagePicker && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
-          onClick={() => setShowImagePicker(false)}
-        >
+        <div className="fixed inset-0 z-500">
+          <div
+            className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            onClick={() => setShowImagePicker(false)}
+          />
           <Card
-            className="w-full max-w-3xl max-h-[80vh] overflow-hidden relative"
+            className="absolute right-0 top-0 flex h-full w-full flex-col overflow-hidden rounded-none border-l border-border shadow-2xl animate-in slide-in-from-right duration-300 md:w-2/5"
             onClick={(e) => e.stopPropagation()}
           >
             <CardHeader className="flex items-center justify-between space-y-0">
@@ -707,18 +729,17 @@ export default function UserSettingsPage() {
               </Button>
             </CardHeader>
 
-            <CardContent className="p-4 overflow-y-auto max-h-[60vh]">
-              <div className="grid grid-cols-4 sm:grid-cols-5 gap-3">
+            <CardContent className="flex-1 overflow-y-auto p-4">
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
                 {availableImages.map((imagePath) => (
                   <button
                     key={imagePath}
                     onClick={() => handleImageSelect(imagePath)}
                     disabled={isUpdatingImage}
-                    className={`relative aspect-square rounded-lg overflow-hidden border-2 transition-all hover:border-[#D4AF37] ${
-                      personalInfo.profileImage === imagePath
+                    className={`relative aspect-square rounded-lg overflow-hidden border-2 transition-all hover:border-[#D4AF37] ${personalInfo.profileImage === imagePath
                         ? 'border-emerald-500 ring-2 ring-emerald-500/50'
                         : 'border-border'
-                    } ${isUpdatingImage ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                      } ${isUpdatingImage ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
                   >
                     <img
                       src={imagePath}

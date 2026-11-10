@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
 import User from '@/models/User';
 import { comparePassword, generateToken } from '@/lib/auth';
+import { normalizePfpPath } from '@/lib/pfp';
 
 export async function POST(request: NextRequest) {
   try {
@@ -67,7 +68,7 @@ export async function POST(request: NextRequest) {
           id: user._id,
           username: user.userName,
           email: user.email,
-          avatar: user.avatar,
+          avatar: normalizePfpPath(user.avatar),
           emailVerified: user.emailVerified,
         }
       },

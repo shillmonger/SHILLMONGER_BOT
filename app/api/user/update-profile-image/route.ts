@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 import { verifyToken } from '@/lib/auth';
 import User from '@/models/User';
 import connectDB from '@/lib/db';
+import { normalizePfpPath } from '@/lib/pfp';
 
 export async function POST(request: NextRequest) {
   try {
@@ -53,7 +54,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       message: 'Profile image updated successfully',
-      avatar: updatedUser.avatar,
+      avatar: normalizePfpPath(updatedUser.avatar),
     });
   } catch (error) {
     console.error('Error updating profile image:', error);

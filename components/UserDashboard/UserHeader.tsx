@@ -108,7 +108,7 @@ export default function UserHeader({
         {/* Theme toggle */}
         <button
           onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-          className="p-2 rounded-full cursor-pointer bg-secondary transition-colors"
+          className="p-2 rounded-lg cursor-pointer bg-secondary transition-colors"
           title="Toggle theme"
         >
           {mounted &&
@@ -122,7 +122,7 @@ export default function UserHeader({
         {/* Notification Bell */}
         <Link
           href="/UserDashboard/notifications"
-          className="p-2 bg-secondary rounded-full relative cursor-pointer"
+          className="p-2 bg-secondary rounded-lg relative cursor-pointer"
         >
           <Bell className="h-5 w-5" />
 
@@ -148,12 +148,13 @@ export default function UserHeader({
               </>
             )}
           </div>
-          <Avatar className="h-10 w-10 border-2 border-border">
+          <Avatar className="h-10 w-10 border-2 border-border rounded-lg">
             <AvatarImage 
               src={user.avatar || defaultProfileImage} 
               alt={user.userName} 
+              className="rounded-lg"
             />
-            <AvatarFallback className="bg-primary text-primary-foreground font-semibold">
+            <AvatarFallback className="bg-primary text-primary-foreground font-semibold rounded-lg">
               {user.userName?.charAt(0).toUpperCase() || "U"}
             </AvatarFallback>
           </Avatar>

@@ -7,31 +7,23 @@ import { toast } from "sonner";
 import {
   LayoutDashboard,
   Send,
-  BadgeCheck,
-  Users,
-  History,
   Signal,
-  TriangleAlert,
-  Tags,
-  Server,
-  ScreenShare,
-  MailSearch,
-  BatteryFull,
-  DatabaseZap,
-  Brain,
-  FaceSlightlySmilingPlus,
-  Scale,
-  Diff,
-  ShieldCheck,
-  CircleGauge,
   UsersRound,
-  UserRoundKey,
-  KeyRound,
-  Lock,
   Settings,
-  PieChart,
+  Lock,
   LogOut,
   ChevronDown,
+  BadgeCheck,
+  KeyRound,
+  UserRoundKey,
+  PieChart,
+  MailSearch,
+  Brain,
+  Tags,
+  CircleGauge,
+  Scale,
+  TriangleAlert,
+  History,
   X,
 } from "lucide-react";
 
@@ -62,6 +54,7 @@ export default function AdminSidebar({
     "TG Responses": false,
   });
 
+  
   const basePath = "/AdminDashboard";
 
   useEffect(() => {
@@ -78,20 +71,10 @@ export default function AdminSidebar({
   }, [showLogoutConfirm, countdown]);
 
   const navItems: NavItem[] = [
-    // === MAIN ===
-    { name: "Overview", icon: LayoutDashboard, href: `${basePath}/dashboard` },
-    { name: "Bot Billing", icon: BadgeCheck, href: `${basePath}/bot-billing` },
-    { name: "TG Providers", icon: Users, href: `${basePath}/providers` },
-    { name: "Bot Analytics", icon: PieChart, href: `${basePath}/my-investments` },
-    {
-      name: "Audit logs",
-      icon: KeyRound,
-      children: [
-        { name: "TG Messages", icon: MailSearch, href: `${basePath}/` },
-        { name: "AI Messages", icon: Brain, href: `${basePath}/` },
-        { name: "Final Signals", icon: Signal, href: `${basePath}/` },
-      ],
-    },
+    { name: "Dashboard", icon: LayoutDashboard, href: `${basePath}/dashboard` },
+    { name: "TG Signals", icon: Signal, href: `${basePath}/signals` },
+    { name: "TG Providers", icon: Send, href: `${basePath}/providers` },
+    { name: "Bot Subscriptions", icon: BadgeCheck, href: `${basePath}/bot-billing` },
     { name: "Copy Trades", icon: Tags, href: `${basePath}/copy-trades` },
     {
       name: "Bot Settings",
@@ -100,12 +83,21 @@ export default function AdminSidebar({
         { name: "Position Limits", icon: CircleGauge, href: `${basePath}/position-limits` },
         { name: "Lot size Config", icon: Scale, href: `${basePath}/lot-size` },
         { name: "Stop lose Config", icon: TriangleAlert, href: `${basePath}/stop-loss` },
-    { name: "Trades Actions", icon: History, href: `${basePath}/trades-actions` },
+        { name: "Trades Actions", icon: History, href: `${basePath}/trades-actions` },
       ],
     },
+     {
+      name: "Audit logs",
+      icon: KeyRound,
+      children: [
+        { name: "TG Messages", icon: MailSearch, href: `${basePath}/` },
+        { name: "AI Messages", icon: Brain, href: `${basePath}/` },
+        { name: "Final Signals", icon: Signal, href: `${basePath}/` },
+      ],
+    },
+    { name: "Bot Analytics", icon: PieChart, href: `${basePath}/my-investments` },
     { name: "Role Settings", icon: UserRoundKey, href: `${basePath}/role-settings` },
-    { name: "User Managements", icon: UsersRound, href: `${basePath}/user-management` },
-  
+    { name: "User Management", icon: UsersRound, href: `${basePath}/user-management` },
     { name: "Switch to User", icon: Lock, href: `/UserDashboard/dashboard` },
   ];
 
