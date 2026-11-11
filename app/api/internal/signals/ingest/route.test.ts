@@ -173,6 +173,25 @@ describe('POST /api/internal/signals/ingest', () => {
     });
   });
 
+  it('returns duplicate for reposted identical trade within window', async () => {
+    // 1st findOne (message-id check) -> null; 2nd (content check) -> match
+    findOne
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ _id: 'earlier', symbol: 'XAUUSDm' });
+    const res = await POST(signedRequest());
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.status).toBe('duplicate');
+    expect(insertOne).not.toHaveBeenCalled();
+    expect(findOne).toHaveBeenCalledTimes(2);
+    const contentQuery = findOne.mock.calls[1][0];
+    expect(contentQuery.chat_id).toBe(-5324198757);
+    expect(contentQuery.symbol).toBe('XAUUSDm');
+    expect(contentQuery.direction).toBe('BUY');
+    expect(contentQuery.take_profits).toEqual([4058]);
+    expect(contentQuery.ingested_at.$gte).toBeInstanceOf(Date);
+  });
+
   it('returns duplicate on unique-index conflict (code 11000)', async () => {
     insertOne.mockRejectedValue(
       Object.assign(new Error('E11000 duplicate key'), { code: 11000 })

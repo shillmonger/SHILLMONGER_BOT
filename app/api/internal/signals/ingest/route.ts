@@ -64,14 +64,36 @@ export async function POST(request: Request) {
       ingested_at: new Date(),
     };
 
-    // Application-level dedup on (chat_id, message_id) — same check the
-    // Python service performs. The unique signal_dedup index remains the
-    // final guarantee against races.
+    // Application-level dedup — same checks the Python service performs.
+    // 1) Same Telegram message redelivered.
     const existing = await collection.findOne({
       chat_id: doc.chat_id,
       message_id: doc.message_id,
     });
     if (existing) {
+      return NextResponse.json({
+        status: 'duplicate',
+        message: 'Signal already stored',
+      });
+    }
+
+    // 2) Content-level dedup: identical trade parameters reposted as a NEW
+    //    Telegram message within the window count as duplicates.
+    const windowSeconds = Number(
+      process.env.SIGNAL_DEDUP_WINDOW_SECONDS ?? 900
+    );
+    const contentDupe = await collection.findOne({
+      chat_id: doc.chat_id,
+      symbol: doc.symbol,
+      direction: doc.direction,
+      entry: doc.entry,
+      stop_loss: doc.stop_loss,
+      take_profits: doc.take_profits,
+      ingested_at: {
+        $gte: new Date(Date.now() - windowSeconds * 1000),
+      },
+    });
+    if (contentDupe) {
       return NextResponse.json({
         status: 'duplicate',
         message: 'Signal already stored',
