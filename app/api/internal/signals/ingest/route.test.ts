@@ -10,7 +10,8 @@
 import crypto from 'crypto';
 
 const insertOne = jest.fn();
-const collection = jest.fn(() => ({ insertOne }));
+const findOne = jest.fn();
+const collection = jest.fn(() => ({ insertOne, findOne }));
 
 jest.mock('mongoose', () => ({
   connection: { db: { collection } },
@@ -74,6 +75,8 @@ describe('POST /api/internal/signals/ingest', () => {
     jest.resetModules();
     process.env = { ...OLD_ENV, WORKER_HMAC_SECRET: SECRET };
     insertOne.mockReset();
+    findOne.mockReset();
+    findOne.mockResolvedValue(null);
     collection.mockClear();
   });
 
@@ -155,6 +158,19 @@ describe('POST /api/internal/signals/ingest', () => {
   it('rejects non-positive entry with 422', async () => {
     const res = await POST(signedRequest({ ...VALID_PAYLOAD, entry: 0 }));
     expect(res.status).toBe(422);
+  });
+
+  it('returns duplicate without inserting when signal already exists', async () => {
+    findOne.mockResolvedValue({ _id: 'existing', chat_id: -5324198757, message_id: 1661 });
+    const res = await POST(signedRequest());
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.status).toBe('duplicate');
+    expect(insertOne).not.toHaveBeenCalled();
+    expect(findOne).toHaveBeenCalledWith({
+      chat_id: -5324198757,
+      message_id: 1661,
+    });
   });
 
   it('returns duplicate on unique-index conflict (code 11000)', async () => {
