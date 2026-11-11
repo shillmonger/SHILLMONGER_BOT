@@ -17,15 +17,24 @@ BOT_API_URL=http://localhost:8000        # Python FastAPI service URL
 BOT_ADMIN_API_KEY=...                    # Bearer key for admin bot endpoints
 BOT_FRONTEND_API_KEY=...                 # Bearer key for user-facing bot endpoints
 NEXT_PUBLIC_BOT_API_URL=http://localhost:8000  # public URL, health checks only
+WORKER_HMAC_SECRET=...                   # MUST equal the Python WORKER_HMAC_SECRET
 ```
+
+`POST /api/internal/signals/ingest` receives signals from the Python worker,
+authenticated by HMAC-SHA256 (`X-Signature`/`X-Timestamp` over
+`{timestamp}.{raw_body}`). It is excluded from session middleware and writes
+to the shared `signals` collection with the same dedup contract as the
+Python ingest endpoint. In production set the Python `BACKEND_URL` to this
+app's public URL (e.g. `https://<app>.vercel.app`).
 
 The Python service keeps its own env config in `SHILLMONGER_BOT/.env`
 (`API_ID`, `API_HASH`, `PHONE_NUMBER`, `MONGODB_URI`, `BACKEND_URL`,
 `WORKER_HMAC_SECRET`, `FRONTEND_API_KEY`, `ADMIN_API_KEY`,
 `TELEGRAM_SESSION_STRING`, `SUPPORTED_SYMBOLS`, `DEFAULT_SYMBOL`,
 `TELEGRAM_AUTO_START`, `ALLOW_INTERACTIVE_LOGIN`, `SERVER_PORT`).
-`BACKEND_URL` there is the worker's own forwarding target — it is unrelated
-to `BOT_API_URL`.
+`BACKEND_URL` there is the worker's signal-forwarding target — point it at
+the deployed Next.js app's `/api/internal/signals/ingest` host; it is
+unrelated to `BOT_API_URL`.
 
 ## Getting Started
 

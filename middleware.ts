@@ -65,7 +65,8 @@ export const config = {
      * - public files
      * - api/auth routes (public API routes)
      * - api/jobs routes (cron job endpoints)
+     * - api/internal routes (HMAC-authenticated worker endpoints)
      */
-    '/((?!_next/static|_next/image|favicon.ico|public|api/auth|api/jobs).*)',
+    '/((?!_next/static|_next/image|favicon.ico|public|api/auth|api/jobs|api/internal).*)',
   ],
 };
