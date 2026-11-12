@@ -6,18 +6,10 @@ import { motion, AnimatePresence } from "framer-motion";
 import { ArrowUpRight, ChartSpline, TrendingUp, ShieldCheck } from "lucide-react";
 
 
-// const IMAGES = [
-//   "https://i.postimg.cc/gkW8VrZk/Banner-1.jpg",
-//   "https://i.postimg.cc/jS8fYX3G/Banner-2.jpg",
-//   "https://i.postimg.cc/7LdTfLkX/Banner-3.jpg",
-//   "https://i.postimg.cc/15BnDBSY/Banner-4.webp",
-//   "https://i.postimg.cc/gjdjZXBs/Banner-5.jpg",
-//   "https://i.postimg.cc/Zqd5sFG6/Banner-6.jpg",
-// ];
 const IMAGES = [
   "https://i.postimg.cc/ZnDX5Ff3/5.jpg",
-  "https://i.postimg.cc/VvF1MffN/Bull-and-Bear.jpg",
-  "https://i.postimg.cc/9Q9sc9yF/6.jpg",
+  "https://i.postimg.cc/MT3ww0Cb/bull1.jpg",
+  "https://i.postimg.cc/7Y24v2m2/bull2.jpg",
 ];
 
 export default function GiftMember({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
@@ -40,19 +32,36 @@ export default function GiftMember({ isOpen, onClose }: { isOpen: boolean; onClo
     };
   }, [isOpen]); // Only run interval when open
 
-  if (!isOpen) return null;
-
   return (
-    <div className="fixed inset-0 z-500 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={onClose}>
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        whileHover={{ y: -8 }}
-        className="relative w-full max-w-[400px] bg-card rounded-[1.5rem] overflow-hidden shadow-2xl shadow-violet-900/30 border border-violet-500/25 transition-shadow"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <AnimatePresence>
+      {isOpen && (
+        <>
+          {/* Overlay */}
+          <motion.div
+            key="overlay"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            className="fixed inset-0 z-[600] bg-black/50 backdrop-blur-sm"
+          />
+
+          {/* Positioner: bottom sheet on mobile, centered card on desktop */}
+          <div
+            className="pointer-events-none fixed inset-0 z-[601] flex items-end justify-center sm:items-center sm:p-4"
+            role="dialog"
+            aria-modal="true"
+          >
+            <motion.div
+              key="card"
+              initial={{ y: 60, opacity: 0, scale: 0.98 }}
+              animate={{ y: 0, opacity: 1, scale: 1 }}
+              exit={{ y: 60, opacity: 0, scale: 0.98 }}
+              transition={{ type: "spring", damping: 26, stiffness: 320 }}
+              className="pointer-events-auto relative flex max-h-[92dvh] w-full max-w-[400px] flex-col overflow-hidden rounded-t-[28px] bg-card shadow-2xl shadow-violet-900/30 border border-violet-500/25 sm:rounded-3xl md:max-w-[860px] md:flex-row"
+            >
         {/* Top Image Slider Section */}
-        <div className="relative h-[200px] overflow-hidden group">
+        <div className="relative h-[200px] overflow-hidden group md:h-auto md:w-[45%] md:shrink-0">
           <AnimatePresence initial={false} mode="wait">
             <motion.img
               key={currentIndex}
@@ -110,7 +119,7 @@ export default function GiftMember({ isOpen, onClose }: { isOpen: boolean; onClo
         </div>
 
         {/* Content Section */}
-        <div className="p-5 lg:p-8 space-y-6">
+        <div className="p-5 lg:p-8 space-y-6 overflow-y-auto min-h-0 md:w-[55%]">
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-violet-600 dark:text-violet-400 font-bold text-xs uppercase tracking-tighter">
               <ChartSpline className="w-4 h-4" />
@@ -153,7 +162,10 @@ export default function GiftMember({ isOpen, onClose }: { isOpen: boolean; onClo
             </button>
           </Link>
         </div>
-      </motion.div>
-    </div>
+            </motion.div>
+          </div>
+        </>
+      )}
+    </AnimatePresence>
   );
 }

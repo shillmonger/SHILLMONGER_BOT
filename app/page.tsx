@@ -7,7 +7,6 @@ import { motion } from "framer-motion";
 import Hero from "../components/LandingPage/Hero";
 import HowWeWork from "../components/LandingPage/HowWeWork";
 import PricingClarity from "../components/LandingPage/PricingClarity";
-import FloatingSidebar from "../components/LandingPage/FloatingSidebar";
 import WhyShillmonger from "../components/LandingPage/WhyShillmonger";
 import TradingPlatforms from "../components/LandingPage/TradingPlatforms";
 import AskShillmonger from "../components/LandingPage/AskShillmonger";
@@ -21,9 +20,6 @@ export default function App() {
       <HowWeWork />
       <PricingClarity />
       <BacktestResults />
-      <div className="hidden md:block">
-      <FloatingSidebar />
-      </div>
       <div className="hidden md:block">
         <WhyShillmonger />
       </div>

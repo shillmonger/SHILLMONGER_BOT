@@ -35,10 +35,6 @@ const faqs = [
     question: "What lot sizes and risk settings does the bot use on XAUUSD?",
     answer: "SHILLMONGER sizes every XAUUSD trade according to your account balance and selected plan, using predefined risk parameters and stop-loss levels. The bot is built to manage drawdown responsibly rather than force trades during volatile or unfavorable gold market conditions."
   },
-  {
-    question: "Does the bot only trade gold, or other instruments too?",
-    answer: "SHILLMONGER is purpose-built and optimized specifically for XAUUSD. Focusing exclusively on gold allows our algorithms to specialize in its unique volatility and liquidity patterns rather than spreading strategy logic across unrelated markets."
-  },
 ];
 
 export default function FAQSection() {

@@ -56,23 +56,25 @@ const NOTES = {
 
 /**
  * How far (px) each line reaches INTO the card, measured from the card edge.
- * Tune these if you change the price text, button width or feature labels.
+ * Adjusted for the wider 440px card.
  *  - pricingLeft / actionLeft: from the card's LEFT edge
  *  - priceNoteRight / creditsRight / featuresRight: from the card's RIGHT edge
  */
 const REACH = {
-  pricingLeft: 22, // stops just before the "$20" numeral
-  actionLeft: 32, // lands on the left edge of the button
-  priceNoteRight: 110, // lands near the end of the price-note line
-  creditsRight: 64, // dot lands inside the credits highlight box
-  featuresRight: 130, // bracket sits just right of the longest feature label
+  pricingLeft: 26, // stops just before the "$20" numeral
+  actionLeft: 26, // straight line reaching into the card next to the button
+  priceNoteRight: 165, // lands near the end of the price-note line
+  creditsRight: 48, // dot lands inside the credits highlight box
+  featuresRight: 60, // bracket sits just right of the longest feature label
 };
 
 /* ───────────────── Small building blocks ───────────────── */
 
-function Dot() {
+function Dot({ className = "" }: { className?: string }) {
   return (
-    <span className="relative z-10 h-2 w-2 shrink-0 rounded-full bg-violet-500 ring-4 ring-violet-500/25 dark:bg-violet-300" />
+    <span
+      className={`relative z-10 h-2 w-2 shrink-0 rounded-full bg-violet-500 ring-4 ring-violet-500/25 dark:bg-violet-300 ${className}`}
+    />
   );
 }
 
@@ -84,7 +86,7 @@ function Line() {
 
 function Note({ title, desc }: { title: string; desc: string }) {
   return (
-    <div className="w-56 shrink-0 rounded-xl border border-violet-500/25 bg-card/70 px-4 py-3 shadow-lg shadow-violet-600/10 backdrop-blur">
+    <div className="w-60 shrink-0 rounded-xl border border-violet-500/25 bg-card/70 px-4 py-3 shadow-lg shadow-violet-600/10 backdrop-blur">
       <p
         className={`${montserrat.className} text-sm font-bold text-foreground`}
       >
@@ -98,9 +100,7 @@ function Note({ title, desc }: { title: string; desc: string }) {
 }
 
 /**
- * Note on the LEFT. The cell is stretched `reach` px into the card so the
- * final dot lands on the element it describes. `h-0` + items-center pins the
- * line to the vertical middle of its grid row without changing the row height.
+ * Note on the LEFT. All lines are now completely straight.
  */
 function LeftNote({
   title,
@@ -177,16 +177,19 @@ export default function PricingClarity() {
       <div className="relative z-10 mx-auto max-w-[1400px] px-4 lg:px-8">
         {/* Header */}
         <div className="text-center">
-             <h2 className="text-3xl md:text-4xl font-black uppercase tracking-tighter mb-2 text-foreground">
-          Clarity /<span className="text-violet-600 dark:text-violet-400">/ Confidence</span>
-        </h2>
-          <p className="mx-auto mt-3 max-w-2xl text-base text-muted-foreground md:text-lg">
+          <h2 className="mb-2 text-3xl font-black uppercase tracking-tighter text-foreground md:text-4xl">
+            Clarity /
+            <span className="text-violet-600 dark:text-violet-400">
+              / Confidence
+            </span>
+          </h2>
+          <p className="mx-auto mt-1 max-w-2xl text-base text-muted-foreground md:text-lg">
             Prepaid credits, transparent pricing, and an obvious next step.
           </p>
         </div>
 
-        {/* Card + annotations */}
-        <div className="mx-auto mt-14 grid max-w-[440px] grid-cols-1 lg:max-w-none lg:grid-cols-[1fr_440px_1fr]">
+        {/* Card + annotations (widened center card to 440px) */}
+        <div className="mx-auto mt-5 grid max-w-[440px] grid-cols-1 lg:max-w-none lg:grid-cols-[1fr_440px_1fr]">
           {/* Card surface (spans every row of the middle column) */}
           <div
             aria-hidden="true"
@@ -196,7 +199,7 @@ export default function PricingClarity() {
           </div>
 
           {/* Row 1: plan name + badge */}
-          <div className="relative z-10 col-start-1 row-start-1 flex items-center justify-between px-7 pb-1 pt-7 lg:col-start-2">
+          <div className="relative z-10 col-start-1 row-start-1 flex items-center justify-between px-8 pb-1 pt-8 lg:col-start-2">
             <p
               className={`${montserrat.className} text-xl font-bold text-white`}
             >
@@ -209,7 +212,7 @@ export default function PricingClarity() {
           </div>
 
           {/* Row 2: price numeral (line anchors to the middle of this row) */}
-          <div className="relative z-10 col-start-1 row-start-2 px-7 pt-3 lg:col-start-2">
+          <div className="relative z-10 col-start-1 row-start-2 px-8 pt-3 lg:col-start-2">
             <p
               className={`${montserrat.className} w-fit bg-gradient-to-b from-white to-violet-200 bg-clip-text text-6xl font-black leading-none tracking-tight text-transparent`}
             >
@@ -218,23 +221,23 @@ export default function PricingClarity() {
           </div>
 
           {/* Row 3: price note */}
-          <div className="relative z-10 col-start-1 row-start-3 px-7 pb-3 pt-2 lg:col-start-2">
+          <div className="relative z-10 col-start-1 row-start-3 px-8 pb-3 pt-2 lg:col-start-2">
             <p className="text-xs text-violet-200/80">{PLAN.priceNote}</p>
           </div>
 
           {/* Row 4: primary action */}
-          <div className="relative z-10 col-start-1 row-start-4 px-7 py-4 lg:col-start-2">
+          <div className="relative z-10 col-start-1 row-start-4 px-8 py-4 lg:col-start-2">
             <Link
               href={PLAN.href}
-              className={`${montserrat.className} flex w-full items-center justify-center rounded-full bg-white py-3 text-sm font-bold text-violet-700 shadow-lg shadow-violet-900/30 ring-2 ring-violet-400/60 transition hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-violet-300 active:scale-[0.98]`}
+              className={`${montserrat.className} flex w-full items-center justify-center rounded-full bg-white py-3.5 text-sm font-bold text-violet-700 shadow-lg shadow-violet-900/30 ring-2 ring-violet-400/60 transition hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-violet-300 active:scale-[0.98]`}
             >
               {PLAN.cta}
             </Link>
           </div>
 
           {/* Row 5: credits highlight */}
-          <div className="relative z-10 col-start-1 row-start-5 px-7 py-4 lg:col-start-2">
-            <div className="rounded-2xl border border-white/15 bg-white/10 px-4 py-3 backdrop-blur">
+          <div className="relative z-10 col-start-1 row-start-5 px-8 py-4 lg:col-start-2">
+            <div className="rounded-2xl border border-white/15 bg-white/10 px-5 py-3.5 backdrop-blur">
               <div className="flex items-end justify-between gap-3">
                 <div>
                   <p
@@ -265,7 +268,7 @@ export default function PricingClarity() {
           </div>
 
           {/* Row 6: features */}
-          <ul className="relative z-10 col-start-1 row-start-6 space-y-3 px-7 pb-10 pt-4 lg:col-start-2">
+          <ul className="relative z-10 col-start-1 row-start-6 space-y-3 px-8 pb-10 pt-4 lg:col-start-2">
             {PLAN.features.map((f) => (
               <li
                 key={f.label}
@@ -288,7 +291,7 @@ export default function PricingClarity() {
             ))}
           </ul>
 
-          {/* Desktop annotations: each line ends on the element it describes */}
+          {/* Desktop annotations: all lines straight */}
           <LeftNote
             {...NOTES.pricing}
             row="lg:row-start-2"

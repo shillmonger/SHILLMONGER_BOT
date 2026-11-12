@@ -14,6 +14,7 @@ import {
   ChevronDown,
   Wallet,
   UsersRound,
+  Bot,
   Trophy,
   Users,
   BarChart3,
@@ -115,7 +116,9 @@ export default function UserSidebar({
   const navItems: NavItem[] = [
     { name: "Dashboard", icon: LayoutDashboard, href: `${basePath}/dashboard` },
     { name: "Subscription", icon: Wallet, href: `${basePath}/subscription` },
-    { name: "Trade History", icon: Layers, href: `${basePath}/signals` },
+    { name: "Trading SetUp", icon: Bot, href: `${basePath}/trading-setup` },
+    { name: "Trade Signals", icon: Layers, href: `${basePath}/signals` },
+    { name: "Trade History", icon: Layers, href: `${basePath}/trade-history` },
     { name: "Transactions", icon: History, href: `${basePath}/transactions` },
     { name: "Predict Market", icon: BarChart3, href: `${basePath}/predict` },
 
@@ -166,7 +169,7 @@ export default function UserSidebar({
 
   const Brand = () => (
     <div className="relative flex-shrink-0 flex items-center justify-start h-15 px-5 border-b border-border">
-      <Link href="/" className="flex flex-col gap-1">
+      <Link href="/UserDashboard/dashboard" className="flex flex-col gap-1">
         <Image
           src="/logo.png"
           alt="Shillmonger"
@@ -320,7 +323,7 @@ export default function UserSidebar({
             <div className="relative flex h-full flex-col">
               <div className="flex-shrink-0 flex items-center justify-between h-16 px-5 border-b border-border">
                 <Link
-                  href="/"
+                  href="/UserDashboard/dashboard"
                   className="flex flex-col gap-1"
                   onClick={() => setSidebarOpen(false)}
                 >

@@ -80,6 +80,7 @@ interface DashboardData {
   billing: number;
   credits: number;
   totalProfit: number;
+  totalLosses: number;
   activePlan: ActivePlan | null;
   tradingCalendar: CalendarItem[];
   calendarAttribution?: string;
@@ -90,7 +91,7 @@ interface DashboardData {
 
 // TODO: replace with real thumbnails per article once the news API is wired up.
 const MOCK_NEWS_IMAGE =
-  "https://i.postimg.cc/q7C5L9zC/The-West-Is-Losing-Control-Over-The-Gold-Price.jpg";
+  "https://i.postimg.cc/MT3ww0Cb/bull1.jpg";
 
 const MOCK_NEWS: NewsItem[] = [
   { id: "NEWS-001", title: "EUR/USD Analysis: Euro Loses Momentum Following the U.S. PCE Release", source: "Forexcom", image: MOCK_NEWS_IMAGE },
@@ -244,10 +245,10 @@ function StatCard({
   tone: string;
 }) {
   return (
-    <div className="group rounded-2xl border border-violet-500/20 bg-card p-4 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-violet-500/50 hover:shadow-lg hover:shadow-violet-900/10">
+    <div className="group rounded-2xl border border-violet-500/20 bg-card p-3 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-violet-500/50 hover:shadow-lg hover:shadow-violet-900/10">
       <div className="flex items-start justify-between">
         <span
-          className={`flex h-10 w-10 items-center justify-center rounded-xl transition-transform duration-300 group-hover:scale-110 ${tone}`}
+          className={`flex h-8 w-8 items-center justify-center rounded-lg transition-transform duration-300 group-hover:scale-110 ${tone}`}
         >
           {icon}
         </span>
@@ -266,7 +267,7 @@ function StatCard({
           {change}
         </span>
       </div>
-      <p className="mt-3 text-2xl font-extrabold tracking-tight tabular-nums font-mono">
+      <p className="mt-2 text-xl font-extrabold tracking-tight tabular-nums font-mono">
         {value}
       </p>
       <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -576,8 +577,8 @@ function LoadingDashboard() {
     <div className="min-h-screen bg-background">
       <div className="mx-auto max-w-7xl animate-pulse space-y-6 py-4">
         <div className="h-12 w-64 rounded-xl bg-muted" />
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          {[0, 1, 2, 3].map((i) => (
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+          {[0, 1, 2, 3, 4].map((i) => (
             <div key={i} className="h-28 rounded-2xl bg-muted" />
           ))}
         </div>
@@ -626,6 +627,7 @@ export default function DashboardPage() {
           billing: 30,
           credits: 120,
           totalProfit: 15.5,
+          totalLosses: -32.1,
           activePlan: {
             name: "STANDARD PLAN",
             amount: 20,
@@ -704,7 +706,7 @@ export default function DashboardPage() {
             >
               [ // OVERVIEW ]
             </p>
-            <h1 className="mt-1 text-2xl font-extrabold uppercase tracking-tight md:text-3xl">
+            <h1 className="mt-1 text-2xl font-extrabold uppercase tracking-tight md:text-2xl">
               User{" "}
               <span className="bg-gradient-to-r from-violet-600 to-purple-600 bg-clip-text text-transparent dark:from-violet-400 dark:to-purple-400">
                 Dashboard
@@ -725,10 +727,10 @@ export default function DashboardPage() {
         </div>
 
         {/* ───────── Stats ───────── */}
-        <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <section className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
           <StatCard
             icon={<Repeat className="h-4 w-4" />}
-            label="Trades"
+            label="Total Trades"
             value={String(data.totalTrades)}
             change="12%"
             trend="up"
@@ -736,15 +738,23 @@ export default function DashboardPage() {
           />
           <StatCard
             icon={<TrendingUp className="h-4 w-4" />}
-            label="Profits"
+            label="Total Profits"
             value={`${data.totalProfit >= 0 ? "" : "-"}${formatCurrency(data.totalProfit)}`}
             change="18%"
             trend="up"
             tone="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
           />
           <StatCard
+            icon={<XCircle className="h-4 w-4" />}
+            label="Total Losses"
+            value={`${data.totalLosses < 0 ? "-" : ""}${formatCurrency(data.totalLosses)}`}
+            change="6%"
+            trend="down"
+            tone="bg-rose-500/15 text-rose-600 dark:text-rose-400"
+          />
+          <StatCard
             icon={<Wallet className="h-4 w-4" />}
-            label="Billing"
+            label="Total Billing"
             value={formatCurrency(data.billing)}
             change="2%"
             trend="down"
@@ -752,7 +762,7 @@ export default function DashboardPage() {
           />
           <StatCard
             icon={<Coins className="h-4 w-4" />}
-            label="Credits"
+            label="Available Credits"
             value={data.credits.toLocaleString("en-US")}
             change="24%"
             trend="up"

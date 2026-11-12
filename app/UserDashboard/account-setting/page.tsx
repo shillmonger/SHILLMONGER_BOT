@@ -502,7 +502,7 @@ export default function UserSettingsPage() {
               >
                 [ // ACCOUNT ]
               </p>
-              <h1 className="mt-1 text-2xl md:text-3xl font-extrabold uppercase tracking-tight">
+              <h1 className="mt-1 text-2xl md:text-2xl font-extrabold uppercase tracking-tight">
                 Account{" "}
                 <span className="bg-gradient-to-r from-violet-600 to-purple-600 bg-clip-text text-transparent dark:from-violet-400 dark:to-purple-400">
                   Settings
