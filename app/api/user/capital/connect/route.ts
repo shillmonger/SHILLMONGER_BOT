@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
 import Broker from '@/models/Broker';
-import { requireAdmin } from '@/lib/auth-helper';
+import { getCurrentUser } from '@/lib/auth-helper';
 import { encrypt } from '@/lib/encryption';
 import {
   authenticate,
@@ -13,16 +13,18 @@ import type { IBrokerAccountInfo } from '@/models/Broker';
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /**
- * POST /api/admin/capital/connect
+ * POST /api/user/capital/connect
  *
- * Saves the operator's OWN Capital.com credentials (encrypted at rest) and
- * verifies them by creating a real API session + fetching accounts.
- * Credentials are NEVER returned in any response.
+ * Saves the authenticated user's OWN Capital.com credentials (encrypted at
+ * rest) and verifies them by creating a real API session + fetching
+ * accounts. Credentials are NEVER returned in any response.
  */
 export async function POST(request: NextRequest) {
   try {
-    const guard = await requireAdmin();
-    if (guard instanceof NextResponse) return guard;
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
 
     let body: {
       email?: string;
@@ -52,10 +54,12 @@ export async function POST(request: NextRequest) {
     }
 
     await connectDB();
+    const userId = String(user._id);
 
     // Persist encrypted credentials FIRST so authenticate() can read them.
+    // Scoped to this user + broker — one connection per user.
     const broker = await Broker.findOneAndUpdate(
-      { brokerName: 'capital.com' },
+      { userId, brokerName: 'capital.com' },
       {
         $set: {
           accountEmail: email,
@@ -64,13 +68,14 @@ export async function POST(request: NextRequest) {
           connectionStatus: 'not_connected',
           connectionError: null,
         },
+        $setOnInsert: { userId },
       },
-      { upsert: true, returnDocument: 'after' }
+      { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true }
     );
 
     // Verify credentials with a real session on the SELECTED environment.
     try {
-      await authenticate(env, broker);
+      await authenticate(userId, env, broker);
     } catch (e) {
       const msg =
         e instanceof CapitalApiError ? e.message : 'Authentication failed';
@@ -87,7 +92,7 @@ export async function POST(request: NextRequest) {
     // Fetch account snapshot for the dashboard (sanitized fields only).
     let accountInfo: IBrokerAccountInfo | undefined;
     try {
-      const acc = await getAccounts(env);
+      const acc = await getAccounts(userId, env);
       const preferred =
         acc.data?.accounts?.find((a) => a.preferred) ?? acc.data?.accounts?.[0];
       if (preferred) {

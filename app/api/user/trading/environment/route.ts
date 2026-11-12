@@ -2,22 +2,24 @@ import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
 import Broker from '@/models/Broker';
 import BotConfig from '@/models/BotConfig';
-import { requireAdmin } from '@/lib/auth-helper';
+import { getCurrentUser } from '@/lib/auth-helper';
 import { getSession, CapitalApiError } from '@/lib/capitalcom';
 
 /**
- * GET /api/admin/trading/environment
- * Returns the effective environment + whether a session is usable.
+ * GET /api/user/trading/environment
+ * Returns the authenticated user's effective environment + connection state.
  */
 export async function GET() {
   try {
-    const guard = await requireAdmin();
-    if (guard instanceof NextResponse) return guard;
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
 
     await connectDB();
     const [broker, bot] = await Promise.all([
-      Broker.findOne({ brokerName: 'capital.com' }).lean(),
-      BotConfig.findOne({}).lean(),
+      Broker.findOne({ userId: user._id, brokerName: 'capital.com' }).lean(),
+      BotConfig.findOne({ userId: user._id }).lean(),
     ]);
 
     const env = (bot?.environment ?? broker?.environment ?? 'demo') as
@@ -38,17 +40,19 @@ export async function GET() {
 }
 
 /**
- * PUT /api/admin/trading/environment
+ * PUT /api/user/trading/environment
  * Body: { environment: 'demo' | 'live' }
  *
- * Persists the selection on BOTH the broker doc and bot config so the whole
- * app uses one environment. For 'live', verifies a live session can actually
- * be established before accepting — otherwise rejects with 409.
+ * Persists the selection on THIS user's broker doc and bot config so their
+ * whole view uses one environment. For any target env, verifies a session
+ * can actually be established before accepting — otherwise rejects with 409.
  */
 export async function PUT(request: NextRequest) {
   try {
-    const guard = await requireAdmin();
-    if (guard instanceof NextResponse) return guard;
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
 
     let body: { environment?: string };
     try {
@@ -66,7 +70,8 @@ export async function PUT(request: NextRequest) {
     }
 
     await connectDB();
-    const broker = await Broker.findOne({ brokerName: 'capital.com' });
+    const userId = String(user._id);
+    const broker = await Broker.findOne({ userId, brokerName: 'capital.com' });
     if (!broker || broker.connectionStatus !== 'connected') {
       return NextResponse.json(
         { error: 'Broker account is not connected', connected: false },
@@ -74,10 +79,10 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // Verify a session can be established in the TARGET environment.
-    // Demo and live sessions are fully independent — never mixed.
+    // Verify a session can be established in the TARGET environment for
+    // THIS user. Sessions are isolated per user + environment.
     try {
-      await getSession(env);
+      await getSession(userId, env);
     } catch (e) {
       const msg =
         e instanceof CapitalApiError ? e.message : 'Session check failed';
@@ -95,11 +100,11 @@ export async function PUT(request: NextRequest) {
 
     await Broker.updateOne({ _id: broker._id }, { $set: { environment: env } });
     await BotConfig.findOneAndUpdate(
-      {},
+      { userId },
       {
         $set: { environment: env },
         $setOnInsert: {
-          userId: (guard as { _id: unknown })._id,
+          userId,
           maxOpenPositions: 0,
           riskPercentage: 0,
           maxDailyLoss: 0,

@@ -4,7 +4,7 @@ export type BotState = 'stopped' | 'running' | 'paused';
 export type BotEnvironment = 'demo' | 'live';
 
 /**
- * Personal bot configuration — a single document owned by the admin user.
+ * Per-user bot configuration — one document per authenticated user.
  * These are user PREFERENCES only; they never contain broker credentials
  * and never prove that live trading is authorized.
  */

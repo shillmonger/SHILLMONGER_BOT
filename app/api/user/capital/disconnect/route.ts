@@ -1,19 +1,21 @@
 import { NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
 import Broker from '@/models/Broker';
-import { requireAdmin } from '@/lib/auth-helper';
+import { getCurrentUser } from '@/lib/auth-helper';
 
 /**
- * POST /api/admin/capital/disconnect
- * Removes stored credentials and session tokens for the personal broker.
+ * POST /api/user/capital/disconnect
+ * Removes the authenticated user's stored credentials and session tokens.
  */
 export async function POST() {
   try {
-    const guard = await requireAdmin();
-    if (guard instanceof NextResponse) return guard;
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
 
     await connectDB();
-    await Broker.deleteOne({ brokerName: 'capital.com' });
+    await Broker.deleteOne({ userId: user._id, brokerName: 'capital.com' });
 
     return NextResponse.json({ success: true, connected: false });
   } catch (error) {

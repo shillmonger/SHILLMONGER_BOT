@@ -1,9 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
 import BotConfig from '@/models/BotConfig';
-import { requireAdmin } from '@/lib/auth-helper';
+import { getCurrentUser } from '@/lib/auth-helper';
 
 const VALID_STATES = ['stopped', 'running', 'paused'] as const;
+
+/** Per-user guard: returns the authenticated user or a NextResponse. */
+async function guardUser() {
+  const { NextResponse } = await import('next/server');
+  const user = await getCurrentUser();
+  if (!user) {
+    return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+  }
+  return user;
+}
 
 /** Sanitize a bot config doc for API responses (no secrets exist here anyway). */
 function sanitize(doc: Record<string, unknown> | null) {
@@ -15,14 +25,14 @@ function sanitize(doc: Record<string, unknown> | null) {
   return { ...rest, id: String(_id), updatedAt, createdAt };
 }
 
-/** GET /api/admin/trading/bot — current bot configuration. */
+/** GET /api/user/trading/bot — current user's bot configuration. */
 export async function GET() {
   try {
-    const guard = await requireAdmin();
-    if (guard instanceof NextResponse) return guard;
+    const user = await guardUser();
+    if (user instanceof Response) return user;
 
     await connectDB();
-    const bot = await BotConfig.findOne({}).lean();
+    const bot = await BotConfig.findOne({ userId: user._id }).lean();
     return NextResponse.json({ bot: sanitize(bot as Record<string, unknown> | null) });
   } catch (error) {
     console.error('Bot GET error:', error);
@@ -31,7 +41,7 @@ export async function GET() {
 }
 
 /**
- * PUT /api/admin/trading/bot
+ * PUT /api/user/trading/bot
  * Body (all optional): {
  *   state?: 'stopped'|'running'|'paused',
  *   environment?: 'demo'|'live',
@@ -49,9 +59,9 @@ export async function GET() {
  */
 export async function PUT(request: NextRequest) {
   try {
-    const guard = await requireAdmin();
-    if (guard instanceof NextResponse) return guard;
-    const userId = (guard as { _id: unknown })._id;
+    const user = await guardUser();
+    if (user instanceof Response) return user;
+    const userId = String(user._id);
 
     let body: Record<string, unknown>;
     try {
@@ -132,7 +142,7 @@ export async function PUT(request: NextRequest) {
 
     await connectDB();
     const bot = await BotConfig.findOneAndUpdate(
-      {},
+      { userId },
       {
         $set: update,
         $setOnInsert: {

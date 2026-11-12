@@ -214,14 +214,14 @@ function useTradingData(environment: Mode): TradingData {
             environment?: Mode; source?: TradingData["source"]; account?: { balance?: number } | null;
             summary?: ApiSummary; bot?: { state?: BotState; emergencyStop?: boolean; environment?: Mode } | null;
             reason?: string;
-          }>("/api/admin/trading/dashboard"),
-          apiGet<{ positions?: ApiPosition[] }>("/api/admin/trading/positions").catch(() => ({ positions: [] })),
-          apiGet<{ trades?: ApiTrade[] }>("/api/admin/trading/history?days=90").catch(() => ({ trades: [] })),
+          }>("/api/user/trading/dashboard"),
+          apiGet<{ positions?: ApiPosition[] }>("/api/user/trading/positions").catch(() => ({ positions: [] })),
+          apiGet<{ trades?: ApiTrade[] }>("/api/user/trading/history?days=90").catch(() => ({ trades: [] })),
           apiGet<{ daily?: AnalyticsDaily[]; winRate?: number | null; wins?: number; losses?: number }>(
-            "/api/admin/trading/analytics?days=90"
+            "/api/user/trading/analytics?days=90"
           ).catch((): { daily?: AnalyticsDaily[]; winRate?: number | null; wins?: number; losses?: number } => ({ daily: [] })),
           apiGet<{ bot?: { state?: BotState; emergencyStop?: boolean; environment?: Mode } | null }>(
-            "/api/admin/trading/bot"
+            "/api/user/trading/bot"
           ).catch(() => ({ bot: null })),
         ]);
         if (cancelled) return;
@@ -251,19 +251,19 @@ function useTradingData(environment: Mode): TradingData {
   }, [environment, tick]);
 
   const setBot = useCallback(async (s: BotState) => {
-    const data = await apiSend<{ bot?: { state?: BotState } }>("/api/admin/trading/bot", "PUT", { state: s });
+    const data = await apiSend<{ bot?: { state?: BotState } }>("/api/user/trading/bot", "PUT", { state: s });
     const next = (data.bot?.state ?? s) as BotState;
     setBotState(next);
   }, []);
 
   const setEmergencyStop = useCallback(async (v: boolean) => {
-    const data = await apiSend<{ bot?: { emergencyStop?: boolean } }>("/api/admin/trading/bot", "PUT", { emergencyStop: v });
+    const data = await apiSend<{ bot?: { emergencyStop?: boolean } }>("/api/user/trading/bot", "PUT", { emergencyStop: v });
     setEmergencyStopState(data.bot?.emergencyStop ?? v);
   }, []);
 
   const setEnvironment = useCallback(async (m: Mode) => {
     try {
-      await apiSend("/api/admin/trading/environment", "PUT", { environment: m });
+      await apiSend("/api/user/trading/environment", "PUT", { environment: m });
       setTick((t) => t + 1);
       return true;
     } catch {
@@ -398,7 +398,7 @@ function CapitalConnectForm({ env, onSuccess }: { env: Mode; onSuccess?: () => v
     setStatus("loading");
     setMessage("");
     try {
-      const res = await fetch("/api/admin/capital/connect", {
+      const res = await fetch("/api/user/capital/connect", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: email.trim(), apiKey: apiKey.trim(), apiPassword, env }),

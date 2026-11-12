@@ -1,22 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
 import BotConfig from '@/models/BotConfig';
-import { requireAdmin } from '@/lib/auth-helper';
+import { getCurrentUser } from '@/lib/auth-helper';
 import { getHistoryActivity, getTransactions, CapitalApiError } from '@/lib/capitalcom';
 
 /**
- * GET /api/admin/trading/history?days=30&includeTransactions=1
- * Closed trades / account activity + optional transactions from Capital.com.
- * `days` maps to a from/to window (Capital.com history endpoints accept
- * date filters; default window is the last `days` days).
+ * GET /api/user/trading/history?days=30&includeTransactions=1
+ * Closed trades / account activity + optional transactions from the
+ * authenticated user's Capital.com account.
  */
 export async function GET(request: NextRequest) {
   try {
-    const guard = await requireAdmin();
-    if (guard instanceof NextResponse) return guard;
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
 
     await connectDB();
-    const bot = await BotConfig.findOne({}).lean();
+    const userId = String(user._id);
+    const bot = await BotConfig.findOne({ userId }).lean();
     const env = (bot?.environment ?? 'demo') as 'demo' | 'live';
 
     const { searchParams } = new URL(request.url);
@@ -28,9 +30,9 @@ export async function GET(request: NextRequest) {
     const fmt = (d: Date) => d.toISOString();
 
     const [activityRes, txRes] = await Promise.all([
-      getHistoryActivity({ from: fmt(from), to: fmt(to) }, env),
+      getHistoryActivity(userId, { from: fmt(from), to: fmt(to) }, env),
       includeTransactions
-        ? getTransactions({ from: fmt(from), to: fmt(to) }, env)
+        ? getTransactions(userId, { from: fmt(from), to: fmt(to) }, env)
         : Promise.resolve(null),
     ]);
 

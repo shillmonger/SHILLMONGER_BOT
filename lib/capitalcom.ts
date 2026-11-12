@@ -1,5 +1,5 @@
 /**
- * Capital.com Public API service (personal account).
+ * Capital.com Public API service (multi-user).
  *
  * Docs: https://open-api.capital.com/
  *
@@ -13,7 +13,9 @@
  *
  * Security rules enforced here:
  *   - Credentials are decrypted only inside this module, never returned.
- *   - Session tokens live in memory and (encrypted) in the BROKER doc.
+ *   - Session tokens live in memory and (encrypted) on the user's BROKER
+ *     doc, keyed per user + environment — sessions are never shared or
+ *     mixed between users or between demo/live.
  *   - POST /positions is NEVER retried automatically — an uncertain
  *     order is reconciled via GET /confirms/{dealReference} instead.
  *   - All requests have timeouts.
@@ -46,16 +48,21 @@ interface SessionTokens {
   createdAt: number;
 }
 
-const sessionCache = new Map<BrokerEnvironment, SessionTokens>();
+/** Sessions are isolated per user AND per environment. */
+const sessionCache = new Map<string, SessionTokens>();
+
+function sessionKey(userId: string, env: BrokerEnvironment): string {
+  return `${userId}:${env}`;
+}
 
 export function getBaseUrl(env: BrokerEnvironment): string {
   return BASE_URLS[env];
 }
 
-/** Load the single personal broker document (null when not configured). */
-export async function getBroker(): Promise<IBroker | null> {
+/** Load a user's broker document (null when not configured). */
+export async function getBroker(userId: string): Promise<IBroker | null> {
   await connectDB();
-  return Broker.findOne({ brokerName: 'capital.com' });
+  return Broker.findOne({ userId, brokerName: 'capital.com' });
 }
 
 function requireCredentials(broker: IBroker): {
@@ -74,15 +81,16 @@ function requireCredentials(broker: IBroker): {
 }
 
 /**
- * Authenticate against Capital.com and store session tokens.
- * Tokens are kept in memory and persisted ENCRYPTED on the broker doc so
- * sessions survive process restarts without exposing them to the frontend.
+ * Authenticate a user's Capital.com account and store session tokens.
+ * Tokens are kept in memory and persisted ENCRYPTED on that user's broker
+ * doc so sessions survive restarts without exposure.
  */
 export async function authenticate(
+  userId: string,
   env: BrokerEnvironment,
   broker?: IBroker | null
 ): Promise<SessionTokens> {
-  const doc = broker ?? (await getBroker());
+  const doc = broker ?? (await getBroker(userId));
   if (!doc) throw new CapitalApiError('Broker account not connected', 400);
 
   const { email, apiKey, apiPassword } = requireCredentials(doc);
@@ -119,10 +127,10 @@ export async function authenticate(
   }
 
   const tokens: SessionTokens = { cst, xst, createdAt: Date.now() };
-  sessionCache.set(env, tokens);
+  sessionCache.set(sessionKey(userId, env), tokens);
 
-  // Persist encrypted tokens for restart survival. Session env tracks which
-  // environment these tokens belong to — demo/live are never mixed.
+  // Persist encrypted tokens for restart survival. sessionEnvironment tracks
+  // which environment these tokens belong to — never mixed.
   await connectDB();
   await Broker.updateOne(
     { _id: doc._id },
@@ -141,17 +149,20 @@ export async function authenticate(
 }
 
 /**
- * Return a valid session for `env`, reusing the in-memory token, then the
- * encrypted persisted token, then performing a fresh authentication.
+ * Return a valid session for (userId, env): in-memory token first, then the
+ * encrypted persisted token, then fresh authentication.
  */
-export async function getSession(env: BrokerEnvironment): Promise<SessionTokens> {
-  const cached = sessionCache.get(env);
+export async function getSession(
+  userId: string,
+  env: BrokerEnvironment
+): Promise<SessionTokens> {
+  const key = sessionKey(userId, env);
+  const cached = sessionCache.get(key);
   if (cached && Date.now() - cached.createdAt < SESSION_MAX_AGE_MS) {
     return cached;
   }
 
-  // Try restoring a persisted session for the same environment.
-  const doc = await getBroker();
+  const doc = await getBroker(userId);
   if (
     doc &&
     doc.sessionEnvironment === env &&
@@ -166,14 +177,14 @@ export async function getSession(env: BrokerEnvironment): Promise<SessionTokens>
         xst: decrypt(doc.encryptedSessionXst),
         createdAt: new Date(doc.lastSessionAt).getTime(),
       };
-      sessionCache.set(env, tokens);
+      sessionCache.set(key, tokens);
       return tokens;
     } catch {
       // Corrupt/undecryptable session — fall through to fresh auth.
     }
   }
 
-  return authenticate(env, doc);
+  return authenticate(userId, env, doc);
 }
 
 async function safeText(res: Response): Promise<string> {
@@ -192,15 +203,16 @@ export interface CapitalResponse<T = unknown> {
 }
 
 /**
- * Authenticated request against the Capital.com API.
+ * Authenticated request against the Capital.com API for a specific user.
  *
- * - Attaches CST + X-SECURITY-TOKEN for the requested environment.
- * - On 401/403 performs ONE re-authentication and retries (safe for all
- *   methods except order submission — callers must not use this for
- *   POST /positions retries; use submitPosition + confirmPosition instead).
- * - Never retries on network timeout for non-idempotent requests.
+ * - Attaches that user's CST + X-SECURITY-TOKEN for the requested env.
+ * - On 401/403 performs ONE re-authentication and retries (callers must
+ *   not rely on this for order submission — createPosition uses
+ *   allowReauth:false).
+ * - Never retries on network timeout.
  */
 export async function capitalRequest<T = unknown>(
+  userId: string,
   method: 'GET' | 'POST' | 'PUT' | 'DELETE',
   path: string,
   options: {
@@ -211,13 +223,16 @@ export async function capitalRequest<T = unknown>(
     timeoutMs?: number;
   } = {}
 ): Promise<CapitalResponse<T>> {
-  const env = options.env ?? (await getBroker())?.environment ?? 'demo';
+  const env =
+    options.env ??
+    ((await getBroker(userId))?.environment as BrokerEnvironment | undefined) ??
+    'demo';
   const allowReauth = options.allowReauth !== false;
 
   const attempt = async (retried: boolean): Promise<CapitalResponse<T>> => {
     let tokens: SessionTokens;
     try {
-      tokens = await getSession(env);
+      tokens = await getSession(userId, env);
     } catch (e) {
       if (e instanceof CapitalApiError) {
         return { ok: false, status: e.status, data: null };
@@ -239,21 +254,12 @@ export async function capitalRequest<T = unknown>(
         signal: AbortSignal.timeout(options.timeoutMs ?? REQUEST_TIMEOUT_MS),
         cache: 'no-store',
       });
-    } catch (e) {
-      const isTimeout =
-        e instanceof Error &&
-        (e.name === 'TimeoutError' || e.name === 'AbortError');
-      return {
-        ok: false,
-        status: 0,
-        data: null,
-        // surfaced via thrown CapitalApiError below for clarity
-        ...(isTimeout ? {} : {}),
-      } as CapitalResponse<T>;
+    } catch {
+      return { ok: false, status: 0, data: null };
     }
 
     if ((res.status === 401 || res.status === 403) && allowReauth && !retried) {
-      sessionCache.delete(env);
+      sessionCache.delete(sessionKey(userId, env));
       return attempt(true);
     }
 
@@ -302,8 +308,8 @@ export interface CapitalAccountsResponse {
   currencyIsoCode?: string;
 }
 
-export async function getAccounts(env?: BrokerEnvironment) {
-  return capitalRequest<CapitalAccountsResponse>('GET', '/accounts', { env });
+export async function getAccounts(userId: string, env?: BrokerEnvironment) {
+  return capitalRequest<CapitalAccountsResponse>(userId, 'GET', '/accounts', { env });
 }
 
 export interface CapitalPositionMarket {
@@ -344,8 +350,8 @@ export interface CapitalPositionsResponse {
   positions?: CapitalPositionEntry[];
 }
 
-export async function getPositions(env?: BrokerEnvironment) {
-  return capitalRequest<CapitalPositionsResponse>('GET', '/positions', { env });
+export async function getPositions(userId: string, env?: BrokerEnvironment) {
+  return capitalRequest<CapitalPositionsResponse>(userId, 'GET', '/positions', { env });
 }
 
 export interface CapitalWorkingOrder {
@@ -364,8 +370,8 @@ export interface CapitalOrdersResponse {
   orders?: Array<{ workingOrderData?: CapitalWorkingOrder } & CapitalWorkingOrder>;
 }
 
-export async function getOrders(env?: BrokerEnvironment) {
-  return capitalRequest<CapitalOrdersResponse>('GET', '/orders', { env });
+export async function getOrders(userId: string, env?: BrokerEnvironment) {
+  return capitalRequest<CapitalOrdersResponse>(userId, 'GET', '/orders', { env });
 }
 
 export interface CapitalMarket {
@@ -384,16 +390,18 @@ export interface CapitalMarket {
   contractSize?: number;
 }
 
-export async function getMarket(epic: string, env?: BrokerEnvironment) {
+export async function getMarket(userId: string, epic: string, env?: BrokerEnvironment) {
   return capitalRequest<{ marketDetails?: CapitalMarket }>(
+    userId,
     'GET',
     `/markets/${encodeURIComponent(epic)}`,
     { env }
   );
 }
 
-export async function searchMarkets(searchTerm: string, env?: BrokerEnvironment) {
+export async function searchMarkets(userId: string, searchTerm: string, env?: BrokerEnvironment) {
   return capitalRequest<{ markets?: CapitalMarket[] }>(
+    userId,
     'GET',
     `/markets?searchTerm=${encodeURIComponent(searchTerm)}`,
     { env }
@@ -414,12 +422,12 @@ export interface CreatePositionResponse {
 }
 
 /**
- * Submit a market order. Returns the dealReference ONLY — the caller MUST
- * confirm via confirmPosition before treating the trade as executed.
- * This function performs exactly one HTTP attempt: never call it in a
- * retry loop for an uncertain outcome.
+ * Submit a market order for a user. Returns the dealReference ONLY — the
+ * caller MUST confirm via confirmPosition before treating the trade as
+ * executed. Exactly one HTTP attempt: never call in a retry loop.
  */
 export async function createPosition(
+  userId: string,
   params: CreatePositionParams,
   env?: BrokerEnvironment
 ): Promise<CapitalResponse<CreatePositionResponse>> {
@@ -434,7 +442,7 @@ export async function createPosition(
 
   // allowReauth=false is intentional for order submission: if the session
   // expired mid-flight we must NOT silently retry a possibly-accepted order.
-  return capitalRequest<CreatePositionResponse>('POST', '/positions', {
+  return capitalRequest<CreatePositionResponse>(userId, 'POST', '/positions', {
     env,
     body,
     allowReauth: false,
@@ -461,10 +469,12 @@ export interface ConfirmResponse {
 
 /** GET /confirms/{dealReference} — the ONLY trusted source of order outcome. */
 export async function confirmPosition(
+  userId: string,
   dealReference: string,
   env?: BrokerEnvironment
 ) {
   return capitalRequest<ConfirmResponse>(
+    userId,
     'GET',
     `/confirms/${encodeURIComponent(dealReference)}`,
     { env }
@@ -492,6 +502,7 @@ export interface CapitalHistoryActivityResponse {
 }
 
 export async function getHistoryActivity(
+  userId: string,
   params: { from?: string; to?: string } = {},
   env?: BrokerEnvironment
 ) {
@@ -500,6 +511,7 @@ export async function getHistoryActivity(
   if (params.to) qs.set('to', params.to);
   const suffix = qs.toString() ? `?${qs.toString()}` : '';
   return capitalRequest<CapitalHistoryActivityResponse>(
+    userId,
     'GET',
     `/history/activity${suffix}`,
     { env, timeoutMs: 20000 }
@@ -520,6 +532,7 @@ export interface CapitalTransactionsResponse {
 }
 
 export async function getTransactions(
+  userId: string,
   params: { from?: string; to?: string } = {},
   env?: BrokerEnvironment
 ) {
@@ -528,6 +541,7 @@ export async function getTransactions(
   if (params.to) qs.set('to', params.to);
   const suffix = qs.toString() ? `?${qs.toString()}` : '';
   return capitalRequest<CapitalTransactionsResponse>(
+    userId,
     'GET',
     `/history/transactions${suffix}`,
     { env, timeoutMs: 20000 }
@@ -535,8 +549,8 @@ export async function getTransactions(
 }
 
 /** DELETE /positions/{dealId} — closes the FULL position for that deal. */
-export async function closePosition(dealId: string, env?: BrokerEnvironment) {
-  return capitalRequest('DELETE', `/positions/${encodeURIComponent(dealId)}`, {
+export async function closePosition(userId: string, dealId: string, env?: BrokerEnvironment) {
+  return capitalRequest(userId, 'DELETE', `/positions/${encodeURIComponent(dealId)}`, {
     env,
     allowReauth: false,
     timeoutMs: 20000,
@@ -548,35 +562,34 @@ export async function closePosition(dealId: string, env?: BrokerEnvironment) {
 /* ------------------------------------------------------------------ */
 
 /**
- * Resolve a signal symbol (e.g. "XAUUSD", "XAU/USD") to a Capital.com epic.
- * Tries the normalized symbol directly, then a market search.
+ * Resolve a signal symbol (e.g. "XAUUSD", "XAU/USD") to a Capital.com epic
+ * using a specific user's session.
  */
 export async function resolveEpic(
+  userId: string,
   symbol: string,
   env?: BrokerEnvironment
 ): Promise<string | null> {
   const normalized = symbol.toUpperCase().replace(/[^A-Z0-9]/g, '');
   if (!normalized) return null;
 
-  // Direct epic lookup first (cheap, exact).
-  const direct = await getMarket(normalized, env);
+  const direct = await getMarket(userId, normalized, env);
   if (direct.ok && direct.data?.marketDetails?.epic) {
     return direct.data.marketDetails.epic;
   }
 
-  const search = await searchMarkets(normalized, env);
+  const search = await searchMarkets(userId, normalized, env);
   const markets = search.data?.markets ?? [];
   const exact = markets.find(
     (m) => (m.epic ?? '').toUpperCase() === normalized
   );
   if (exact?.epic) return exact.epic;
-  // Common FX/metal naming fallbacks
   const fallbacks: Record<string, string[]> = {
     XAUUSD: ['XAUUSD', 'GOLD'],
     XAGUSD: ['XAGUSD', 'SILVER'],
   };
   for (const candidate of fallbacks[normalized] ?? []) {
-    const m = await getMarket(candidate, env);
+    const m = await getMarket(userId, candidate, env);
     if (m.ok && m.data?.marketDetails?.epic) return m.data.marketDetails.epic;
   }
   return markets[0]?.epic ?? null;

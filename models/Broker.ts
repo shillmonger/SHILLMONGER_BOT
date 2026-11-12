@@ -23,6 +23,7 @@ export interface IBrokerAccountInfo {
 }
 
 export interface IBroker extends Document {
+  userId: mongoose.Types.ObjectId;
   brokerName: string;
   accountEmail: string;
   /** AES-256-GCM encrypted (lib/encryption.ts) — never returned by APIs */
@@ -46,6 +47,11 @@ export interface IBroker extends Document {
 
 const BrokerSchema: Schema = new Schema(
   {
+    userId: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+    },
     brokerName: {
       type: String,
       required: true,
@@ -115,8 +121,8 @@ const BrokerSchema: Schema = new Schema(
   }
 );
 
-// Single personal broker connection — enforce at most one document.
-BrokerSchema.index({ brokerName: 1 }, { unique: true });
+// One broker connection per user per broker.
+BrokerSchema.index({ userId: 1, brokerName: 1 }, { unique: true });
 
 const Broker: Model<IBroker> =
   mongoose.models.Broker || mongoose.model<IBroker>('Broker', BrokerSchema);

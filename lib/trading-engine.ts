@@ -1,22 +1,23 @@
 /**
- * Signal-driven trade execution engine (personal Capital.com account).
+ * Signal-driven trade execution engine (multi-user Capital.com).
  *
- * Pipeline for one ingested Telegram signal:
- *   bot state check -> emergency stop -> broker connection -> environment
- *   -> instrument permission -> open-position limit -> risk sizing
- *   -> POST /positions (single attempt) -> GET /confirms/{dealReference}
- *   -> record TradeExecution.
+ * Pipeline per eligible user for one ingested Telegram signal:
+ *   bot running + automationEnabled + !emergencyStop
+ *   -> user's broker connected -> instrument allowlist -> open-position
+ *   limit -> session check -> risk sizing (bot risk% or admin lot-size
+ *   rule) -> POST /positions (single attempt)
+ *   -> GET /confirms/{dealReference} -> TradeExecution record.
  *
  * Hard rules:
  *   - A trade is 'open' ONLY after /confirms confirms it.
- *   - Uncertain submissions are reconciled via the deal reference; the
- *     order endpoint is never blindly retried.
- *   - Duplicate execution for the same Telegram message is impossible
- *     (unique index on chatId+messageId in TradeExecution).
+ *   - Order submission is never blindly retried; uncertain outcomes are
+ *     reconciled via the deal reference.
+ *   - One execution per (userId, chatId, messageId) — unique index.
+ *   - One user's failure never blocks another user's execution.
  */
 
 import connectDB from '@/lib/db';
-import BotConfig from '@/models/BotConfig';
+import BotConfig, { IBotConfig } from '@/models/BotConfig';
 import TradeExecution from '@/models/TradeExecution';
 import PositionLimit from '@/models/PositionLimit';
 import LotSizeManagement from '@/models/LotSizeManagement';
@@ -51,42 +52,51 @@ function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-/**
- * Execute a validated signal against the connected Capital.com account.
- * Returns a result object; never throws for expected failure modes.
- */
-export async function executeSignal(signal: IngestedSignal): Promise<{
+interface ExecResult {
   executed: boolean;
   reason?: string;
   dealReference?: string;
-}> {
+}
+
+/**
+ * Fan-out entry point: find every user whose bot is armed and execute the
+ * signal independently for each. Called (fire-and-forget) by the ingest
+ * route after a signal is stored.
+ */
+export async function executeSignal(signal: IngestedSignal): Promise<void> {
   try {
     await connectDB();
+    const bots = await BotConfig.find({
+      state: 'running',
+      automationEnabled: true,
+      emergencyStop: { $ne: true },
+    }).lean();
 
-    /* ---- 1. Bot must be running ---- */
-    const configs = await BotConfig.find({}).limit(1);
-    const bot = configs[0] ?? null;
-    if (!bot || bot.state !== 'running' || !bot.automationEnabled) {
-      return { executed: false, reason: 'bot_not_running' };
-    }
-    if (bot.emergencyStop) {
-      return { executed: false, reason: 'emergency_stop' };
-    }
+    if (bots.length === 0) return;
 
-    const env = bot.environment;
-    if (env === 'live') {
-      // Server-side live gate: a live trade additionally requires the
-      // broker to be connected AND the live session to authenticate.
-      // Demo always allowed when connected.
-    }
+    // Independent per-user execution — settle all, never let one failure
+    // reject the others.
+    await Promise.allSettled(bots.map((bot) => executeForUser(signal, bot)));
+  } catch (e) {
+    console.error('[trading-engine] fan-out error:', e);
+  }
+}
 
-    /* ---- 2. Broker must be connected ---- */
-    const broker = await getBroker();
+async function executeForUser(
+  signal: IngestedSignal,
+  bot: IBotConfig
+): Promise<ExecResult> {
+  const userId = String(bot.userId);
+  const env = bot.environment;
+
+  try {
+    /* ---- Broker must be connected for THIS user ---- */
+    const broker = await getBroker(userId);
     if (!broker || broker.connectionStatus !== 'connected') {
       return { executed: false, reason: 'broker_not_connected' };
     }
 
-    /* ---- 3. Resolve instrument ---- */
+    /* ---- Instrument allowlist ---- */
     const symbol = (signal.symbol || '').toUpperCase();
     if (bot.allowedInstruments.length > 0) {
       const allowed = bot.allowedInstruments.map((s) => s.toUpperCase());
@@ -96,20 +106,12 @@ export async function executeSignal(signal: IngestedSignal): Promise<{
       }
     }
 
-    const epic = await resolveEpic(signal.symbol, env);
-    if (!epic) {
-      return { executed: false, reason: 'instrument_not_found' };
-    }
-
     const direction = signal.direction.toUpperCase();
     if (direction !== 'BUY' && direction !== 'SELL') {
       return { executed: false, reason: 'invalid_direction' };
     }
 
-    /* ---- 4. Admin balance-tier rules + open-position limit ----
-     * Bot values of 0 mean "defer to the admin-managed rules":
-     *   PositionLimit.max_positions, LotSizeManagement.lot_size,
-     *   StopLossManagement.stop_loss — matched by account balance range. */
+    /* ---- Admin balance-tier rules (bot value 0 = defer to admin) ---- */
     const equity =
       broker.accountInfo?.equity ?? broker.accountInfo?.balance ?? 0;
 
@@ -129,8 +131,9 @@ export async function executeSignal(signal: IngestedSignal): Promise<{
         ? bot.maxOpenPositions
         : posRule?.max_positions ?? null;
 
+    /* ---- Open-position limit ---- */
     try {
-      const posRes = await getPositions(env);
+      const posRes = await getPositions(userId, env);
       const openCount = posRes.data?.positions?.length ?? 0;
       if (maxPositions !== null && openCount >= maxPositions) {
         return { executed: false, reason: 'max_open_positions' };
@@ -139,26 +142,30 @@ export async function executeSignal(signal: IngestedSignal): Promise<{
       return { executed: false, reason: 'positions_unavailable' };
     }
 
-    /* ---- 5. Session check (validates credentials are still good) ---- */
+    /* ---- Session check ---- */
     try {
-      await getSession(env);
+      await getSession(userId, env);
     } catch (e) {
       const msg = e instanceof CapitalApiError ? e.message : 'session_failed';
       return { executed: false, reason: `session_error:${msg}` };
     }
 
-    /* ---- 6. Instrument metadata + sizing ----
-     * riskPercentage > 0  -> risk-based sizing (equity * risk% / SL distance)
-     * riskPercentage = 0  -> fixed size from the LotSizeManagement rule */
-    const marketRes = await getMarket(epic, env);
+    /* ---- Instrument resolution ---- */
+    const epic = await resolveEpic(userId, signal.symbol, env);
+    if (!epic) {
+      return { executed: false, reason: 'instrument_not_found' };
+    }
+
+    /* ---- Instrument metadata + sizing ----
+     * riskPercentage > 0  -> risk-based sizing
+     * riskPercentage = 0  -> fixed size from LotSizeManagement rule */
+    const marketRes = await getMarket(userId, epic, env);
     const market = marketRes.data?.marketDetails;
     const minSize = market?.minDealSize ?? 0;
     const maxSize = market?.maxDealSize ?? Number.MAX_SAFE_INTEGER;
     const increment = market?.dealSizeIncrement ?? minSize ?? 0.01;
     const contractSize = market?.contractSize ?? 1;
 
-    // Effective stop distance: admin StopLossManagement rule wins when set,
-    // otherwise the signal's own stop loss.
     const slDistance =
       slRule && slRule.stop_loss > 0
         ? Number(slRule.stop_loss)
@@ -168,38 +175,27 @@ export async function executeSignal(signal: IngestedSignal): Promise<{
     let size = 0;
     if (bot.riskPercentage > 0) {
       if (slDistance > 0 && riskAmount > 0) {
-        // size in deal units: risk / (price distance * contract size)
         size = riskAmount / (slDistance * contractSize);
       }
     } else {
       if (!lotRule || !(lotRule.lot_size > 0)) {
-        await recordExecution({
-          signal,
-          env,
-          epic,
-          direction,
-          size: 0,
-          status: 'rejected',
-          error: 'no_lot_size_rule_for_balance',
+        await recordExecution(userId, signal, {
+          env, epic, direction: direction as 'BUY' | 'SELL',
+          size: 0, status: 'rejected', error: 'no_lot_size_rule_for_balance',
         });
         return { executed: false, reason: 'no_lot_size_rule' };
       }
       size = Number(lotRule.lot_size);
     }
-    // Round DOWN to the broker's size increment — never round risk up.
     if (increment > 0 && bot.riskPercentage > 0) {
       size = Math.floor(size / increment) * increment;
     }
     size = Math.min(size, maxSize);
 
     if (size <= 0 || size < minSize) {
-      await recordExecution({
-        signal,
-        env,
-        epic,
-        direction,
-        size: 0,
-        status: 'rejected',
+      await recordExecution(userId, signal, {
+        env, epic, direction: direction as 'BUY' | 'SELL',
+        size: 0, status: 'rejected',
         error: `size_below_minimum (computed=${size}, min=${minSize})`,
       });
       return { executed: false, reason: 'size_below_minimum' };
@@ -213,29 +209,21 @@ export async function executeSignal(signal: IngestedSignal): Promise<{
           : signal.entry + Number(slRule.stop_loss)
         : signal.stop_loss;
 
-    /* ---- 7. Submit order — exactly once ---- */
+    /* ---- Submit order — exactly once ---- */
     const tp1 = signal.take_profits?.[0];
-    const submit = await createPosition(
-      {
-        epic,
-        direction: direction as 'BUY' | 'SELL',
-        size,
-        stopLevel,
-        profitLevel: tp1,
-        guaranteedStop: false,
-      },
-      env
-    );
+    const submit = await createPosition(userId, {
+      epic,
+      direction: direction as 'BUY' | 'SELL',
+      size,
+      stopLevel,
+      profitLevel: tp1,
+      guaranteedStop: false,
+    }, env);
 
     if (!submit.ok || !submit.data?.dealReference) {
-      await recordExecution({
-        signal,
-        env,
-        epic,
-        direction: direction as 'BUY' | 'SELL',
-        size,
-        stopLevel,
-        status: 'failed',
+      await recordExecution(userId, signal, {
+        env, epic, direction: direction as 'BUY' | 'SELL',
+        size, stopLevel, status: 'failed',
         error: `submit_http_${submit.status}`,
       });
       return { executed: false, reason: 'submit_failed' };
@@ -243,12 +231,12 @@ export async function executeSignal(signal: IngestedSignal): Promise<{
 
     const dealReference = submit.data.dealReference;
 
-    /* ---- 8. Confirm via deal reference — never trust the 200 ---- */
+    /* ---- Confirm via deal reference — never trust the 200 ---- */
     let confirmed = false;
     let dealId: string | undefined;
     for (let i = 0; i < MAX_CONFIRM_ATTEMPTS; i++) {
       await sleep(CONFIRM_DELAY_MS);
-      const conf = await confirmPosition(dealReference, env);
+      const conf = await confirmPosition(userId, dealReference, env);
       const status = conf.data?.dealConfirmation?.dealStatus;
       const deals = conf.data?.dealConfirmation?.affectedDeals ?? [];
       if (status === 'ACCEPTED' || deals.length > 0) {
@@ -259,16 +247,10 @@ export async function executeSignal(signal: IngestedSignal): Promise<{
       if (status === 'REJECTED' || status === 'FAILED') break;
     }
 
-    await recordExecution({
-      signal,
-      env,
-      epic,
-      direction: direction as 'BUY' | 'SELL',
-      size,
-      stopLevel,
+    await recordExecution(userId, signal, {
+      env, epic, direction: direction as 'BUY' | 'SELL',
+      size, stopLevel, dealReference, dealId,
       status: confirmed ? 'open' : 'submitted',
-      dealReference,
-      dealId,
       error: confirmed ? undefined : 'confirmation_pending',
       confirmedAt: confirmed ? new Date() : undefined,
       openedAt: confirmed ? new Date() : undefined,
@@ -280,44 +262,43 @@ export async function executeSignal(signal: IngestedSignal): Promise<{
       dealReference,
     };
   } catch (e) {
-    console.error('[trading-engine] unexpected error:', e);
+    console.error(`[trading-engine] user ${userId} error:`, e);
     return { executed: false, reason: 'internal_error' };
   }
 }
 
-async function recordExecution(args: {
-  signal: IngestedSignal;
-  env: 'demo' | 'live';
-  epic: string;
-  direction: 'BUY' | 'SELL';
-  size: number;
-  status: 'open' | 'submitted' | 'rejected' | 'failed';
-  dealReference?: string;
-  dealId?: string;
-  stopLevel?: number;
-  error?: string;
-  confirmedAt?: Date;
-  openedAt?: Date;
-}) {
+async function recordExecution(
+  userId: string,
+  signal: IngestedSignal,
+  args: {
+    env: 'demo' | 'live';
+    epic: string;
+    direction: 'BUY' | 'SELL';
+    size: number;
+    stopLevel?: number;
+    status: 'open' | 'submitted' | 'rejected' | 'failed';
+    dealReference?: string;
+    dealId?: string;
+    error?: string;
+    confirmedAt?: Date;
+    openedAt?: Date;
+  }
+) {
   try {
     await connectDB();
-    // Resolve owner: the personal platform's admin user.
-    const User = (await import('@/models/User')).default;
-    const admin = await User.findOne({ role: 'admin' }).select('_id').lean();
-    if (!admin) return;
-
+    // upsert keyed by (userId, chatId, messageId) — one record per user
+    // per signal, enforced by the unique index.
     await TradeExecution.updateOne(
-      { chatId: args.signal.chat_id, messageId: args.signal.message_id },
+      { userId, chatId: signal.chat_id, messageId: signal.message_id },
       {
         $set: {
-          userId: admin._id,
           environment: args.env,
           epic: args.epic,
           direction: args.direction,
           size: args.size,
-          entryLevel: args.signal.entry,
-          stopLevel: args.stopLevel ?? args.signal.stop_loss,
-          takeProfitLevel: args.signal.take_profits?.[0],
+          entryLevel: signal.entry,
+          stopLevel: args.stopLevel ?? signal.stop_loss,
+          takeProfitLevel: signal.take_profits?.[0],
           dealReference: args.dealReference,
           dealId: args.dealId,
           status: args.status,

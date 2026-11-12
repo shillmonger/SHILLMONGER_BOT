@@ -1,23 +1,25 @@
 import { NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
 import TradeExecution from '@/models/TradeExecution';
-import { requireAdmin } from '@/lib/auth-helper';
+import { getCurrentUser } from '@/lib/auth-helper';
 
 /**
- * GET /api/admin/trading/executions?status=open&limit=100
- * Local audit trail of order submissions/confirms for the personal bot.
+ * GET /api/user/trading/executions?status=open&limit=100
+ * The authenticated user's own order submission/confirmation audit trail.
  */
 export async function GET(request: Request) {
   try {
-    const guard = await requireAdmin();
-    if (guard instanceof NextResponse) return guard;
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
 
     await connectDB();
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status');
     const limit = Math.min(Number(searchParams.get('limit') ?? 100) || 100, 500);
 
-    const query: Record<string, unknown> = {};
+    const query: Record<string, unknown> = { userId: user._id };
     if (status) query.status = status;
 
     const executions = await TradeExecution.find(query)

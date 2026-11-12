@@ -1,23 +1,26 @@
 import { NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
 import BotConfig from '@/models/BotConfig';
-import { requireAdmin } from '@/lib/auth-helper';
+import { getCurrentUser } from '@/lib/auth-helper';
 import { getOrders } from '@/lib/capitalcom';
 
 /**
- * GET /api/admin/trading/orders
- * Pending/working orders from Capital.com.
+ * GET /api/user/trading/orders
+ * Pending/working orders from the authenticated user's Capital.com account.
  */
 export async function GET() {
   try {
-    const guard = await requireAdmin();
-    if (guard instanceof NextResponse) return guard;
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
 
     await connectDB();
-    const bot = await BotConfig.findOne({}).lean();
+    const userId = String(user._id);
+    const bot = await BotConfig.findOne({ userId }).lean();
     const env = (bot?.environment ?? 'demo') as 'demo' | 'live';
 
-    const res = await getOrders(env);
+    const res = await getOrders(userId, env);
     if (!res.ok) {
       return NextResponse.json(
         { error: `Capital.com orders request failed (HTTP ${res.status})`, orders: [] },

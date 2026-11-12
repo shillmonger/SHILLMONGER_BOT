@@ -1,19 +1,25 @@
 import { NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
 import Broker from '@/models/Broker';
-import { requireAdmin } from '@/lib/auth-helper';
+import { getCurrentUser } from '@/lib/auth-helper';
 
 /**
- * GET /api/admin/capital/status
- * Returns sanitized broker connection status — NEVER credentials or tokens.
+ * GET /api/user/capital/status
+ * Returns the authenticated user's sanitized broker connection status —
+ * NEVER credentials or tokens.
  */
 export async function GET() {
   try {
-    const guard = await requireAdmin();
-    if (guard instanceof NextResponse) return guard;
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
 
     await connectDB();
-    const broker = await Broker.findOne({ brokerName: 'capital.com' }).lean();
+    const broker = await Broker.findOne({
+      userId: user._id,
+      brokerName: 'capital.com',
+    }).lean();
 
     if (!broker) {
       return NextResponse.json({

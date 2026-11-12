@@ -86,9 +86,10 @@ const TradeExecutionSchema: Schema = new Schema(
   }
 );
 
-// One execution per Telegram message — prevents duplicate order submission.
+// One execution per user per Telegram message — prevents duplicate order
+// submission while allowing every eligible user to trade the same signal.
 TradeExecutionSchema.index(
-  { chatId: 1, messageId: 1 },
+  { userId: 1, chatId: 1, messageId: 1 },
   {
     unique: true,
     partialFilterExpression: { chatId: { $exists: true }, messageId: { $exists: true } },

@@ -1,23 +1,26 @@
 import { NextResponse } from 'next/server';
-import { requireAdmin } from '@/lib/auth-helper';
+import { getCurrentUser } from '@/lib/auth-helper';
 import { getPositions, CapitalApiError } from '@/lib/capitalcom';
 import BotConfig from '@/models/BotConfig';
 import connectDB from '@/lib/db';
 
 /**
- * GET /api/admin/trading/positions
- * Real open positions from Capital.com, mapped to the frontend shape.
+ * GET /api/user/trading/positions
+ * Real open positions from the authenticated user's Capital.com account.
  */
 export async function GET() {
   try {
-    const guard = await requireAdmin();
-    if (guard instanceof NextResponse) return guard;
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
 
     await connectDB();
-    const bot = await BotConfig.findOne({}).lean();
+    const userId = String(user._id);
+    const bot = await BotConfig.findOne({ userId }).lean();
     const env = (bot?.environment ?? 'demo') as 'demo' | 'live';
 
-    const res = await getPositions(env);
+    const res = await getPositions(userId, env);
     if (!res.ok) {
       return NextResponse.json(
         { error: `Capital.com positions request failed (HTTP ${res.status})`, positions: [] },

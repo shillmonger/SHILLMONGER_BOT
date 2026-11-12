@@ -2,23 +2,27 @@ import { NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
 import Broker from '@/models/Broker';
 import BotConfig from '@/models/BotConfig';
-import { requireAdmin } from '@/lib/auth-helper';
+import { getCurrentUser } from '@/lib/auth-helper';
 import { getAccounts, getPositions, getSession, CapitalApiError } from '@/lib/capitalcom';
 
 /**
- * GET /api/admin/trading/dashboard
- * Real Capital.com data for the selected environment.
- * Returns source:'broker' | 'unavailable' — never fabricated figures.
+ * GET /api/user/trading/dashboard
+ * Real Capital.com data for the authenticated user's selected environment.
+ * Returns source:'broker' | 'stale_cache' | 'unavailable' — never fabricated
+ * figures.
  */
 export async function GET() {
   try {
-    const guard = await requireAdmin();
-    if (guard instanceof NextResponse) return guard;
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
 
     await connectDB();
+    const userId = String(user._id);
     const [broker, bot] = await Promise.all([
-      Broker.findOne({ brokerName: 'capital.com' }).lean(),
-      BotConfig.findOne({}).lean(),
+      Broker.findOne({ userId, brokerName: 'capital.com' }).lean(),
+      BotConfig.findOne({ userId }).lean(),
     ]);
 
     const env = (bot?.environment ?? broker?.environment ?? 'demo') as 'demo' | 'live';
@@ -32,14 +36,17 @@ export async function GET() {
       });
     }
 
-    // Refresh account + positions live from Capital.com.
+    // Refresh account + positions live from Capital.com for THIS user.
     let account = broker.accountInfo ?? null;
     let positions: Awaited<ReturnType<typeof getPositions>>['data'] = null;
     let sessionOk = true;
 
     try {
-      await getSession(env);
-      const [accRes, posRes] = await Promise.all([getAccounts(env), getPositions(env)]);
+      await getSession(userId, env);
+      const [accRes, posRes] = await Promise.all([
+        getAccounts(userId, env),
+        getPositions(userId, env),
+      ]);
       const preferred =
         accRes.data?.accounts?.find((a) => a.preferred) ?? accRes.data?.accounts?.[0];
       if (preferred) {
@@ -55,7 +62,7 @@ export async function GET() {
         };
       }
       positions = posRes.data;
-      // Cache fresh account snapshot on the broker doc.
+      // Cache fresh account snapshot on THIS user's broker doc.
       await Broker.updateOne({ _id: broker._id }, { $set: { accountInfo: account } });
     } catch (e) {
       sessionOk = false;
