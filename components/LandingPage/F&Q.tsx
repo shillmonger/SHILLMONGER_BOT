@@ -5,23 +5,27 @@ import { Plus, ChevronDown } from "lucide-react";
 const faqs = [
   {
     question: "What is SHILLMONGER and how does it work?",
-    answer: "SHILLMONGER is an automated XAUUSD trading bot that integrates with your MetaTrader 4 or 5 account. Once connected, our advanced algorithms analyze gold market conditions and execute trades on your behalf, allowing you to participate in gold trading without manual intervention."
+    answer: "SHILLMONGER is an automated XAUUSD (gold) trading bot that connects to your MetaTrader 4 or 5 account. Once linked, the bot analyzes gold market conditions and executes trades on your behalf — demo or live — so you can grow your account without watching charts all day."
+  },
+  {
+    question: "How do the credit packages work?",
+    answer: "SHILLMONGER uses prepaid credit packages from $20 to $1,000 — there is no monthly subscription. You get a credit balance (e.g. Starter = 1,000 credits) and credits are only deducted on profitable trading days: 200 credits per winning day. Losing, break-even and no-trade days cost 0 credits, and unused credits roll over and never expire."
+  },
+  {
+    question: "Is there a free plan?",
+    answer: "Yes — the Free plan gives you full bot access on a demo MT5 account at zero cost, forever. It's the safest way to test execution and watch the bot work before you put real capital on a live account."
   },
   {
     question: "How do I connect my MT4/MT5 account to the bot?",
-    answer: "After purchasing a subscription, you'll receive connection instructions. Simply enter your broker account credentials in our secure dashboard, and our system will link your MT4/MT5 account for automated trading execution."
-  },
-  {
-    question: "Can I test the bot on a demo account first?",
-    answer: "Absolutely! We strongly recommend testing SHILLMONGER on a demo account first to verify performance and familiarize yourself with the system before connecting a live account with real capital."
-  },
-  {
-    question: "How do subscription plans work?",
-    answer: "We offer flexible subscription plans to match different account sizes and trading goals. Each plan provides automated trading for a specified duration (typically 5 days to 1 Month). At the end of your subscription, you can renew or upgrade to continue using the bot."
+    answer: "Pick a plan on the subscription page and complete checkout. After payment is confirmed, you connect your broker account through your SHILLMONGER dashboard and the bot starts trading XAUUSD on your behalf."
   },
   {
     question: "How and when can I withdraw my profits?",
-    answer: "Profits are calculated and credited to your account according to your subscription plan terms. You can withdraw your profits at any time through your broker account using your preferred payment method."
+    answer: "The bot trades directly inside your own broker account, so profits and losses show up there in real time — SHILLMONGER never holds your funds. You withdraw anytime through your broker using your usual methods, exactly as if you traded manually."
+  },
+  {
+    question: "What payment methods do you accept?",
+    answer: "We accept crypto (USDT), bank transfer and major bank cards. All plans are one-time prepaid purchases, so there is never a recurring charge."
   },
   {
     question: "Is my broker account information secure?",
@@ -50,13 +54,13 @@ export default function FAQSection() {
 
         {/* Main Heading */}
         <h2 className="text-3xl md:text-4xl font-black uppercase tracking-tighter mb-2 text-foreground">
-          Frequently Asked Questions
+          Frequently Asked <span className="text-violet-600 dark:text-violet-400">Questions</span>
         </h2>
 
         {/* Centered Paragraph */}
-        <p className="text-neutral-500 dark:text-neutral-400 text-sm md:text-base leading-relaxed">
+          <p className="mx-auto mt-0 max-w-xl text-base text-muted-foreground md:text-lg">
           Everything you need to know about the SHILLMONGER automated XAUUSD trading bot.
-          From MT4/MT5 integration to subscription plans and withdrawals.
+          From MT4/MT5 integration and prepaid credits to payouts and payments.
         </p>
       </div>
 
@@ -99,14 +103,16 @@ function FAQItem({ faq, isOpen, onClick }: { faq: any; isOpen: boolean; onClick:
       onClick={onClick}
       className={`group relative transition-all duration-300 rounded-xl border cursor-pointer overflow-hidden ${
         isOpen
-          ? "bg-white dark:bg-neutral-900 border-[#D4AF37]/40 shadow-lg shadow-[#D4AF37]/10"
-          : "bg-white/70 dark:bg-neutral-900/70 hover:bg-white dark:hover:bg-neutral-900 border-neutral-200/80 dark:border-neutral-700/80 hover:border-neutral-300 dark:hover:border-neutral-600 shadow-sm"
+          ? "bg-white dark:bg-neutral-900 border-violet-500/40 shadow-lg shadow-violet-600/10"
+          : "bg-white/70 dark:bg-neutral-900/70 hover:bg-white dark:hover:bg-neutral-900 border-neutral-200/80 dark:border-neutral-700/80 hover:border-violet-400/50 dark:hover:border-violet-500/40 shadow-sm"
       }`}
     >
       <div className="w-full flex items-center justify-between p-4 px-5 text-left">
         <span
           className={`text-base md:text-base font-bold tracking-tight transition-colors ${
-            isOpen ? "text-[#14123B] dark:text-white" : "text-neutral-800 dark:text-neutral-200 group-hover:text-neutral-900 dark:group-hover:text-white"
+            isOpen
+              ? "text-violet-900 dark:text-white"
+              : "text-neutral-800 dark:text-neutral-200 group-hover:text-violet-700 dark:group-hover:text-violet-300"
           }`}
         >
           {faq.question}
@@ -115,8 +121,8 @@ function FAQItem({ faq, isOpen, onClick }: { faq: any; isOpen: boolean; onClick:
           <div
             className={`flex h-9 w-9 items-center justify-center rounded-full transition-all duration-300 ${
               isOpen
-                ? "bg-[#D4AF37] text-black rotate-180 shadow-md shadow-[#D4AF37]/30"
-                : "bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 group-hover:bg-neutral-200 dark:group-hover:bg-neutral-700"
+                ? "bg-gradient-to-br from-violet-600 to-purple-600 text-white rotate-180 shadow-md shadow-violet-600/30"
+                : "bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 group-hover:bg-violet-100 dark:group-hover:bg-violet-900/40 group-hover:text-violet-700 dark:group-hover:text-violet-300"
             }`}
           >
             <ChevronDown className="w-4 h-4 stroke-[2.5]" />
@@ -126,7 +132,7 @@ function FAQItem({ faq, isOpen, onClick }: { faq: any; isOpen: boolean; onClick:
 
       {isOpen && (
         <div className="px-6 pb-6 pt-0" onClick={(e) => e.stopPropagation()}>
-          <div className="h-[1px] bg-neutral-100 dark:bg-neutral-800 mb-4" />
+          <div className="h-[1px] bg-violet-100 dark:bg-violet-900/40 mb-4" />
           <p className="text-neutral-500 dark:text-neutral-400 text-sm md:text-sm leading-relaxed font-normal">
             {faq.answer}
           </p>

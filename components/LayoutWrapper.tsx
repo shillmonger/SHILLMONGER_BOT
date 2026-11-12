@@ -3,7 +3,8 @@
 import { usePathname } from "next/navigation";
 import Header from "@/components/LandingPage/Header";
 import Footer from "@/components/LandingPage/Footer";
-import CookieConsent from "@/components/LandingPage/CookieConsent";
+import Discount from "@/components/LandingPage/Discount";
+import PromoBanner from "@/components/LandingPage/PromoBanner";
 
 export default function LayoutWrapper({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -11,25 +12,19 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
   const isUserDashboard = pathname?.startsWith("/UserDashboard");
   const isAdminDashboard = pathname?.startsWith("/AdminDashboard");
 
-  // if (isAuthPage) {
-  //   return (
-  //     <>
-  //       {children}
-  //       <Footer />
-  //     </>
-  //   );
-  // }
-
   if (isAuthPage || isUserDashboard || isAdminDashboard) {
     return <>{children}</>;
   }
 
   return (
     <>
+      <PromoBanner />
+      {/* Spacer so page content isn't hidden behind the fixed banner (h-8 = banner height) */}
+      <div className="h-5" aria-hidden="true" />
       <Header />
       {children}
       <Footer />
-      <CookieConsent />
+      <Discount />
     </>
   );
 }

@@ -43,12 +43,12 @@ export default function GiftMember({ isOpen, onClose }: { isOpen: boolean; onClo
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-500 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onClick={onClose}>
+    <div className="fixed inset-0 z-500 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={onClose}>
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         whileHover={{ y: -8 }}
-        className="relative w-full max-w-[400px] bg-card rounded-[1.5rem] overflow-hidden shadow-2xl border border-border/50 transition-shadow"
+        className="relative w-full max-w-[400px] bg-card rounded-[1.5rem] overflow-hidden shadow-2xl shadow-violet-900/30 border border-violet-500/25 transition-shadow"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Top Image Slider Section */}
@@ -73,11 +73,13 @@ export default function GiftMember({ isOpen, onClose }: { isOpen: boolean; onClo
 
           {/* Overlays & Badges - Ensure these stay ABOVE images */}
           <div className="absolute inset-0 bg-gradient-to-t from-card via-transparent to-black/20 z-[1]" />
+          <div className="absolute inset-0 bg-gradient-to-br from-violet-700/25 via-transparent to-transparent z-[1]" />
   
           {/* Close Button */}
           <button
             onClick={onClose}
-            className="absolute cursor-pointer top-5 right-5 w-8 h-8 bg-white/10 backdrop-blur-md border border-white/20 rounded-full flex items-center justify-center text-white hover:bg-white/20 transition-colors z-20"
+            className="absolute cursor-pointer top-5 right-5 w-8 h-8 bg-white/10 backdrop-blur-md border border-white/20 rounded-full flex items-center justify-center text-white hover:bg-violet-600/60 transition-colors z-20"
+            aria-label="Close"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -88,7 +90,7 @@ export default function GiftMember({ isOpen, onClose }: { isOpen: boolean; onClo
             <span className="px-3 py-1 bg-white/10 backdrop-blur-md border border-white/20 rounded-full text-[10px] font-bold text-white uppercase tracking-widest">
               Rewards
             </span>
-            <span className="px-3 py-1 bg-primary/80 backdrop-blur-md rounded-full text-[10px] font-bold text-primary-foreground uppercase tracking-widest flex items-center gap-1">
+            <span className="px-3 py-1 bg-gradient-to-r from-violet-600 to-purple-600 backdrop-blur-md rounded-full text-[10px] font-bold text-white uppercase tracking-widest flex items-center gap-1">
               <ShieldCheck className="w-3 h-3" /> Secure
             </span>
           </div>
@@ -100,7 +102,7 @@ export default function GiftMember({ isOpen, onClose }: { isOpen: boolean; onClo
                 key={i}
                 onClick={() => setCurrentIndex(i)} // Added clickability for convenience
                 className={`h-1.5 cursor-pointer rounded-full transition-all duration-300 ${
-                  i === currentIndex ? "w-6 bg-white" : "w-1.5 bg-white/40"
+                  i === currentIndex ? "w-6 bg-violet-400" : "w-1.5 bg-white/40"
                 }`}
               />
             ))}
@@ -108,14 +110,17 @@ export default function GiftMember({ isOpen, onClose }: { isOpen: boolean; onClo
         </div>
 
         {/* Content Section */}
-        <div className="p-5 lg:8 space-y-6">
+        <div className="p-5 lg:p-8 space-y-6">
           <div className="space-y-2">
-            <div className="flex items-center gap-2 text-primary font-bold text-xs uppercase tracking-tighter">
+            <div className="flex items-center gap-2 text-violet-600 dark:text-violet-400 font-bold text-xs uppercase tracking-tighter">
               <ChartSpline className="w-4 h-4" />
               <span>Market Predictions Live</span>
             </div>
             <h2 className="text-2xl font-black text-foreground leading-tight tracking-tight">
-              Predict Gold Price
+              Predict{" "}
+              <span className="bg-gradient-to-r from-violet-600 to-purple-600 bg-clip-text text-transparent dark:from-violet-400 dark:to-purple-400">
+                Gold Price
+              </span>
             </h2>
             <p className="text-muted-foreground text-sm leading-relaxed font-medium">
               Test your market analysis skills. Predict if gold prices will go up or down. Win predictions to earn $5 daily.
@@ -123,26 +128,26 @@ export default function GiftMember({ isOpen, onClose }: { isOpen: boolean; onClo
           </div>
 
           {/* Stats/Info Row */}
-          <div className="flex items-center justify-between py-4 border-y border-border/50">
+          <div className="flex items-center justify-between py-4 border-y border-violet-500/20">
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-primary/10">
-                <TrendingUp className="w-5 h-5 text-primary" />
+              <div className="p-2 rounded-xl bg-violet-500/15">
+                <TrendingUp className="w-5 h-5 text-violet-600 dark:text-violet-400" />
               </div>
               <div>
                 <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-widest">Rewards</p>
                 <p className="text-sm font-bold">$5 Per Win</p>
               </div>
             </div>
-            <div className="text-right font-mono text-sm font-black text-primary">
+            <div className="text-right font-mono text-sm font-black text-violet-600 dark:text-violet-400">
               DAILY CHALLENGE
             </div>
           </div>
 
           {/* Action Button */}
           <Link href="/user-dashboard/predict">
-            <button className="group relative w-full cursor-pointer bg-[#D4AF37] text-black font-bold py-3 px-6 rounded-2xl flex items-center justify-between overflow-hidden transition-all hover:pr-8 active:scale-[0.98]">
+            <button className="group relative w-full cursor-pointer bg-gradient-to-r from-violet-600 to-purple-600 text-white font-bold py-3 px-6 rounded-2xl flex items-center justify-between overflow-hidden shadow-lg shadow-violet-900/30 transition-all hover:from-violet-500 hover:to-purple-500 hover:pr-8 active:scale-[0.98]">
               <span className="relative z-10">Predict XAUUSD</span>
-              <div className="h-8 w-8 bg-background/20 rounded-full flex items-center justify-center transition-transform group-hover:rotate-45">
+              <div className="h-8 w-8 bg-white/20 rounded-full flex items-center justify-center transition-transform group-hover:rotate-45">
                 <ArrowUpRight className="w-5 h-5" />
               </div>
             </button>

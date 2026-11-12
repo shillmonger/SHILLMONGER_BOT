@@ -50,124 +50,77 @@ export default function LoginPage() {
     }
   };
 
+  const socialBtn =
+    "h-11 rounded-2xl cursor-pointer bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-foreground border border-neutral-200 dark:border-neutral-700 transition-all";
+
+  const inputCls =
+    "h-12 px-5 text-sm rounded-full border border-neutral-300 dark:border-neutral-700 bg-background text-foreground focus-visible:ring-0 focus-visible:border-violet-500 placeholder:text-neutral-400 dark:placeholder:text-neutral-500";
+
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-background p-0 md:p-6">
-      <div className="w-full md:h-auto md:max-w-5xl flex flex-col md:flex-row md:bg-white md:dark:bg-neutral-900 md:rounded-[2rem] md:shadow-2xl md:shadow-[#14123B]/20 md:border md:border-neutral-200 dark:border-neutral-800 overflow-hidden">
-        {/* Left Panel - gradient hero, hidden on mobile */}
-        <div className="hidden md:flex relative w-1/2 flex-col justify-between p-8 m-3 rounded-3xl overflow-hidden bg-gradient-to-br from-[#14123B] via-[#1D1B4B] to-[#2A2678]">
-          {/* soft blurred blobs for depth, gold instead of indigo */}
-          <div className="pointer-events-none absolute -top-16 -left-16 h-64 w-64 rounded-full bg-[#D4AF37]/30 blur-3xl" />
-          <div className="pointer-events-none absolute bottom-0 right-0 h-72 w-72 rounded-full bg-white/10 blur-3xl" />
+    <div className="min-h-screen w-full bg-background text-foreground lg:grid lg:grid-cols-2">
+      {/* ───────── Left: form (follows light / dark theme) ───────── */}
+      <div className="relative flex min-h-screen flex-col px-6 py-10 sm:px-10">
+        {/* Logo - mobile only (right panel is hidden) */}
+        <Link href="/" className="lg:hidden mx-auto">
+          <Image
+            src="/logo.png"
+            alt="Shillmonger"
+            width={180}
+            height={48}
+            priority
+            className="h-10 w-auto"
+          />
+        </Link>
 
-          {/* Candlestick motif from Hero - green and red */}
-          <svg
-            className="pointer-events-none absolute inset-0 h-full w-full opacity-[0.14]"
-            viewBox="0 0 1200 550"
-            preserveAspectRatio="none"
-            aria-hidden="true"
-          >
-            <polyline
-              points="0,420 60,400 120,430 180,360 240,380 300,300 360,330 420,260 480,290 540,220 600,250 660,180 720,210 780,150 840,190 900,120 960,160 1020,100 1080,140 1140,80 1200,110"
-              fill="none"
-              stroke="#D4AF37"
-              strokeWidth="2"
-            />
-            {[60, 180, 300, 420, 540, 660, 780, 900, 1020, 1140].map((x, i) => (
-              <rect
-                key={x}
-                x={x - 6}
-                y={i % 2 === 0 ? 400 - i * 28 : 380 - i * 28}
-                width="12"
-                height="34"
-                fill={i % 3 === 0 ? "#EF4444" : "#22C55E"}
-                opacity="0.6"
-              />
-            ))}
-          </svg>
-
-          <Link href="/">
-            <div className="relative z-10">
-              <h1 className="text-3xl font-black text-white tracking-tight">SHILLMONGER</h1>
+        <div className="flex flex-1 flex-col justify-center">
+          <div className="w-full max-w-md mx-auto">
+            <div className="text-center">
+              <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-foreground">
+                Welcome Back
+              </h1>
+              <p className="text-sm md:text-base text-muted-foreground mt-1 mb-10">
+                Login to your account
+              </p>
             </div>
-          </Link>
-
-          <div className="relative z-10 text-white">
-            <p className="text-sm font-medium text-[#D4AF37] mb-2">
-              You can easily
-            </p>
-            <h2 className="text-2xl font-bold leading-snug">
-              Get access to your personal hub for clarity and productivity
-            </h2>
-          </div>
-        </div>
-
-        {/* Right Panel - form */}
-        <div className="w-full md:w-1/2 flex flex-col justify-center px-6 sm:px-10 md:px-10 py-10">
-          <div className="w-full max-w-sm mx-auto">
-            {/* Logo text, shown on mobile only since left panel is hidden */}
-            {/* <Link href="/" className="md:hidden mb-4">
-              <h1 className="text-2xl font-black text-foreground tracking-tight">SHILLMONGER</h1>
-            </Link> */}
-
-            <h1 className="text-2xl font-extrabold tracking-tight text-foreground">
-              Welcome Back
-            </h1>
-            <p className="text-sm text-muted-foreground mt-2 mb-8">
-              Login to your account
-            </p>
 
             <form onSubmit={handleSubmit} className="flex flex-col gap-5">
               {/* Email */}
               <div className="grid gap-2">
-                <Label
-                  htmlFor="email"
-                  className="text-sm font-semibold text-foreground"
-                >
+                <Label htmlFor="email" className="sr-only">
                   Your email
                 </Label>
                 <Input
                   id="email"
                   name="email"
                   type="text"
-                  placeholder="you@example.com"
+                  placeholder="Enter your email"
                   disabled={isLoading}
                   required
-                  className="h-12 text-sm px-4 rounded-xl border border-neutral-300 dark:border-neutral-700 bg-background text-foreground focus-visible:ring-0 focus-visible:border-[#D4AF37] placeholder:text-neutral-400 dark:placeholder:text-neutral-500"
+                  className={inputCls}
                 />
               </div>
 
               {/* Password */}
               <div className="grid gap-2">
-                <div className="flex items-center justify-between">
-                  <Label
-                    htmlFor="password"
-                    className="text-sm font-semibold text-foreground"
-                  >
-                    Password
-                  </Label>
-                  <Link
-                    href="/auth-page/forgot-password"
-                    className="text-xs font-semibold text-[#B8912A] hover:text-[#D4AF37] transition-colors"
-                  >
-                    Forgot password?
-                  </Link>
-                </div>
-
+                <Label htmlFor="password" className="sr-only">
+                  Password
+                </Label>
                 <div className="relative">
                   <Input
                     id="password"
                     name="password"
                     type={showPassword ? "text" : "password"}
-                    placeholder="••••••••"
+                    placeholder="Enter your password"
                     disabled={isLoading}
                     required
-                    className="h-12 pr-12 px-4 text-sm rounded-xl border border-neutral-300 dark:border-neutral-700 bg-background text-foreground focus-visible:ring-0 focus-visible:border-[#D4AF37] placeholder:text-neutral-400 dark:placeholder:text-neutral-500"
+                    className={`${inputCls} pr-14`}
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword((prev) => !prev)}
-                    className="absolute inset-y-0 right-3 flex items-center text-neutral-500 dark:text-neutral-400 hover:text-neutral-950 dark:hover:text-neutral-200 focus:outline-none cursor-pointer"
+                    className="absolute inset-y-0 right-5 flex items-center text-neutral-500 dark:text-neutral-400 hover:text-neutral-950 dark:hover:text-neutral-200 focus:outline-none cursor-pointer"
                     tabIndex={-1}
+                    aria-label={showPassword ? "Hide password" : "Show password"}
                   >
                     {showPassword ? (
                       <EyeOff className="h-5 w-5" />
@@ -176,13 +129,22 @@ export default function LoginPage() {
                     )}
                   </button>
                 </div>
+
+                <div className="flex justify-end">
+                  <Link
+                    href="/auth-page/forgot-password"
+                    className="text-sm font-semibold text-violet-600 dark:text-violet-400 hover:text-violet-500 dark:hover:text-violet-300 transition-colors"
+                  >
+                    Forgot password?
+                  </Link>
+                </div>
               </div>
 
               {/* Submit */}
               <Button
                 type="submit"
                 disabled={isLoading}
-                className="w-full h-12 mt-1 rounded-xl text-sm font-semibold cursor-pointer bg-[#D4AF37] hover:bg-[#C9A22E] text-black shadow-lg shadow-[#D4AF37]/30 transition-all"
+                className="w-full h-12 mt-1 rounded-full text-sm font-bold cursor-pointer bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 text-white shadow-lg shadow-violet-900/30 transition-all"
               >
                 {isLoading ? (
                   <>
@@ -203,12 +165,9 @@ export default function LoginPage() {
 
               {/* Social row */}
               <div className="grid grid-cols-3 gap-3">
-                <Button
-                  type="button"
-                  className="h-11 rounded-xl cursor-pointer bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-foreground border border-neutral-200 dark:border-neutral-700 transition-all"
-                >
+                <Button type="button" className={socialBtn}>
                   <svg
-                    className="h-4 w-4"
+                    className="h-6 w-6"
                     fill="currentColor"
                     viewBox="0 0 24 24"
                     xmlns="http://www.w3.org/2000/svg"
@@ -218,11 +177,8 @@ export default function LoginPage() {
                   <span className="sr-only">Continue with X</span>
                 </Button>
 
-                <Button
-                  type="button"
-                  className="h-11 rounded-xl cursor-pointer bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-foreground border border-neutral-200 dark:border-neutral-700 transition-all"
-                >
-                  <svg className="h-4 w-4" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+                <Button type="button" className={socialBtn}>
+                  <svg className="h-6 w-6" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
                     <path
                       fill="#FFC107"
                       d="M43.611 20.083H42V20H24v8h11.303C33.655 32.657 29.207 36 24 36c-6.627 0-12-5.373-12-12S17.373 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.27 4 24 4 12.955 4 4 12.955 4 24s8.955 20 20 20 20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z"
@@ -243,12 +199,9 @@ export default function LoginPage() {
                   <span className="sr-only">Continue with Google</span>
                 </Button>
 
-                <Button
-                  type="button"
-                  className="h-11 rounded-xl cursor-pointer bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-foreground border border-neutral-200 dark:border-neutral-700 transition-all"
-                >
+                <Button type="button" className={socialBtn}>
                   <svg
-                    className="h-4 w-4"
+                    className="h-6 w-6"
                     fill="currentColor"
                     viewBox="0 0 24 24"
                     xmlns="http://www.w3.org/2000/svg"
@@ -260,29 +213,75 @@ export default function LoginPage() {
               </div>
 
               {/* Register link */}
-              <div className="text-center text-sm font-medium text-muted-foreground mt-2">
+              <div className="text-center text-sm font-medium text-muted-foreground mt-3">
                 Don&apos;t have an account?{" "}
                 <Link
                   href="/auth-page/register"
-                  className="font-semibold text-[#B8912A] hover:text-[#D4AF37] transition-colors"
+                  className="font-bold text-violet-600 dark:text-violet-400 hover:text-violet-500 dark:hover:text-violet-300 transition-colors"
                 >
                   Sign up
                 </Link>
               </div>
             </form>
           </div>
+        </div>
 
-          {/* Legal footer */}
-          <div className="w-full max-w-sm mx-auto mt-8 text-center text-xs font-medium text-muted-foreground leading-relaxed">
-            By clicking continue, you agree to our{" "}
-            <Link href="#" className="font-semibold text-foreground hover:text-foreground/80 transition-colors">
-              Terms of Service
-            </Link>{" "}
-            and{" "}
-            <Link href="#" className="font-semibold text-foreground hover:text-foreground/80 transition-colors">
-              Privacy Policy
-            </Link>
-            .
+        {/* Legal footer */}
+        <div className="w-full max-w-md mx-auto mt-8 text-center text-xs font-medium text-muted-foreground leading-relaxed">
+          By clicking continue, you agree to our{" "}
+          <Link href="#" className="font-semibold text-foreground hover:text-foreground/80 transition-colors">
+            Terms of Service
+          </Link>{" "}
+          and{" "}
+          <Link href="#" className="font-semibold text-foreground hover:text-foreground/80 transition-colors">
+            Privacy Policy
+          </Link>
+          .
+        </div>
+      </div>
+
+      {/* ───────── Right: purple hero panel with video ───────── */}
+      <div className="hidden lg:block p-3">
+        <div className="relative flex h-full min-h-[calc(100vh-1.5rem)] flex-col overflow-hidden rounded-[2rem] bg-gradient-to-br from-violet-700 via-violet-600 to-purple-700 pl-12 pt-12">
+          {/* soft blurred blobs for depth */}
+          <div className="pointer-events-none absolute -top-16 -left-16 h-72 w-72 rounded-full bg-white/20 blur-3xl" />
+          <div className="pointer-events-none absolute bottom-0 right-0 h-80 w-80 rounded-full bg-purple-900/40 blur-3xl" />
+
+          {/* Logo */}
+          <Link href="/" className="relative z-10 w-fit">
+            <Image
+              src="/logo1.png"
+              alt="Shillmonger"
+              width={250}
+              height={60}
+              priority
+              className="h-17 w-auto"
+            />
+          </Link>
+
+          {/* Headline */}
+          <div className="relative z-10 mt-10 pr-12 text-white">
+            <p className="text-sm font-semibold text-violet-200 mb-3">
+              You can easily
+            </p>
+            <h2 className="text-4xl xl:text-4xl font-extrabold leading-[1.1] tracking-tight">
+              Get access to your personal hub for clarity and productivity
+            </h2>
+          </div>
+
+          {/* Video - bleeds off the bottom-right like a dashboard preview */}
+          <div className="relative z-10 mt-10 flex-1 min-h-[260px]">
+            <div className="absolute inset-0 overflow-hidden rounded-tl-2xl border-l border-t border-white/25 bg-[#0d0b26] shadow-[0_-10px_60px_rgba(0,0,0,0.45)]">
+              <video
+                className="h-full w-full object-cover object-left-top"
+                src="/videos/MTR.mp4"
+                autoPlay
+                muted
+                loop
+                playsInline
+                preload="auto"
+              />
+            </div>
           </div>
         </div>
       </div>
