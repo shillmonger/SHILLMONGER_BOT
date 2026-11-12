@@ -9,10 +9,12 @@ import { IBM_Plex_Mono } from "next/font/google";
 import {
   LayoutDashboard,
   Settings,
+  ChartCandlestick,
   Lock,
   LogOut,
   ChevronDown,
   Wallet,
+  Link as LinkIcon,
   UsersRound,
   Bot,
   Trophy,
@@ -116,8 +118,8 @@ export default function UserSidebar({
   const navItems: NavItem[] = [
     { name: "Dashboard", icon: LayoutDashboard, href: `${basePath}/dashboard` },
     { name: "Subscription", icon: Wallet, href: `${basePath}/subscription` },
-    { name: "Trading SetUp", icon: Bot, href: `${basePath}/trading-setup` },
-    { name: "Trade Signals", icon: Layers, href: `${basePath}/signals` },
+    { name: "Trading Bot Setup", icon: LinkIcon, href: `${basePath}/trading-setup` },
+    { name: "Trade Signals", icon: ChartCandlestick, href: `${basePath}/signals` },
     { name: "Trade History", icon: Layers, href: `${basePath}/trade-history` },
     { name: "Transactions", icon: History, href: `${basePath}/transactions` },
     { name: "Predict Market", icon: BarChart3, href: `${basePath}/predict` },
