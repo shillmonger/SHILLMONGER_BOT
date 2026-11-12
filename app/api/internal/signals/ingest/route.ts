@@ -102,6 +102,16 @@ export async function POST(request: Request) {
 
     try {
       const result = await collection.insertOne(doc);
+
+      // Kick off personal-bot execution for the stored signal. Runs
+      // asynchronously — the ingest ack must not wait for broker I/O, and
+      // the engine performs its own eligibility/risk checks. Duplicate
+      // executions are impossible (unique chatId+messageId index).
+      const stored = { ...doc, _id: result.insertedId };
+      import('@/lib/trading-engine')
+        .then(({ executeSignal }) => executeSignal(stored))
+        .catch((e) => console.error('[ingest] trading engine error:', e));
+
       return NextResponse.json({
         status: 'stored',
         id: result.insertedId.toString(),

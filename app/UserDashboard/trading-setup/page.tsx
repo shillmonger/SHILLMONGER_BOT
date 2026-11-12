@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { IBM_Plex_Mono } from "next/font/google";
 import { Bar, BarChart, CartesianGrid, Cell, ReferenceLine, XAxis } from "recharts";
 import {
   AlertTriangle, ArrowDownRight, ArrowLeft, ArrowRight, ArrowUpRight,
-  BarChart3, Bot, Check, KeyRound, LayoutDashboard, LineChart, Link2,
+  BarChart3, Bot, Check, Eye, EyeOff, KeyRound, LayoutDashboard, LineChart, Link2,
   Loader2, Lock, Mail, Percent, Settings, ShieldAlert, SlidersHorizontal,
   TrendingDown, TrendingUp, Trophy, Wallet,
 } from "lucide-react";
@@ -36,12 +37,12 @@ interface Answers {
 }
 
 interface Position {
-  id: string; symbol: string; dir: "BUY" | "SELL"; entry: number; current: number;
-  size: number; sl: number; tp: number; pl: number;
+  id: string; symbol: string; dir: "BUY" | "SELL"; entry: number | null; current: number | null;
+  size: number | null; sl: number | null; tp: number | null; pl: number | null;
 }
 interface Trade {
-  id: string; symbol: string; dir: "BUY" | "SELL"; entry: number; exit: number | null;
-  opened: string; closed: string | null; pl: number; status: "WIN" | "LOSS" | "OPEN";
+  id: string; symbol: string; dir: "BUY" | "SELL"; entry: number | null; exit: number | null;
+  opened: string; closed: string | null; pl: number | null; status: "WIN" | "LOSS" | "OPEN";
 }
 interface DayPoint { date: string; value: number }
 interface PnlPoint { x: string; value: number }
@@ -65,23 +66,6 @@ const NAV: { key: View; label: string; icon: React.ReactNode }[] = [
   { key: "setup", label: "Trading Setup", icon: <SlidersHorizontal className="h-3.5 w-3.5" /> },
 ];
 
-const POSITIONS: Position[] = [
-  { id: "P-101", symbol: "XAU/USD", dir: "BUY", entry: 4405.72, current: 4418.3, size: 0.02, sl: 4390.0, tp: 4440.0, pl: 25.16 },
-  { id: "P-102", symbol: "EUR/USD", dir: "SELL", entry: 1.0842, current: 1.0861, size: 0.1, sl: 1.0885, tp: 1.0780, pl: -19.0 },
-  { id: "P-103", symbol: "USD/JPY", dir: "BUY", entry: 151.22, current: 151.64, size: 0.05, sl: 150.8, tp: 152.4, pl: 13.85 },
-];
-
-const TRADES: Trade[] = [
-  { id: "TRD-001", symbol: "XAU/USD", dir: "BUY", entry: 4388.23, exit: 4413.33, opened: "2026-11-11 09:14", closed: "2026-11-11 11:40", pl: 125.5, status: "WIN" },
-  { id: "TRD-002", symbol: "XAU/USD", dir: "SELL", entry: 4388.71, exit: 4397.77, opened: "2026-11-11 12:02", closed: "2026-11-11 12:51", pl: -45.3, status: "LOSS" },
-  { id: "TRD-003", symbol: "GBP/USD", dir: "SELL", entry: 1.2641, exit: 1.2603, opened: "2026-11-10 08:30", closed: "2026-11-10 14:05", pl: 78.25, status: "WIN" },
-  { id: "TRD-004", symbol: "USD/CAD", dir: "BUY", entry: 1.3712, exit: 1.3688, opened: "2026-11-10 15:11", closed: "2026-11-10 16:20", pl: -32.1, status: "LOSS" },
-  { id: "TRD-005", symbol: "AUD/USD", dir: "BUY", entry: 0.6544, exit: 0.6571, opened: "2026-11-09 07:45", closed: "2026-11-09 10:30", pl: 56.8, status: "WIN" },
-  { id: "TRD-006", symbol: "USD/CHF", dir: "SELL", entry: 0.8812, exit: 0.8799, opened: "2026-11-09 13:00", closed: "2026-11-09 15:42", pl: 12.4, status: "WIN" },
-  { id: "TRD-007", symbol: "XAU/USD", dir: "BUY", entry: 4405.72, exit: null, opened: "2026-11-12 08:20", closed: null, pl: 25.16, status: "OPEN" },
-  { id: "TRD-008", symbol: "EUR/USD", dir: "SELL", entry: 1.0842, exit: null, opened: "2026-11-12 09:05", closed: null, pl: -19.0, status: "OPEN" },
-];
-
 /* ───────────────── Helpers ───────────────── */
 
 const money = (v: number) =>
@@ -93,20 +77,9 @@ const shortDate = (d: string) =>
 const longDate = (d: string) =>
   new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(new Date(d));
 
-function generateSeries(seed: number, days: number): DayPoint[] {
-  let s = seed;
-  const rand = () => {
-    s |= 0; s = (s + 0x6d2b79f5) | 0;
-    let t = Math.imul(s ^ (s >>> 15), 1 | s);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-  const DAY = 86400000;
-  const base = new Date("2026-11-12T00:00:00Z").getTime();
-  return Array.from({ length: days }, (_, i) => ({
-    date: new Date(base - (days - 1 - i) * DAY).toISOString(),
-    value: Math.round((-90 + rand() * 300) * 100) / 100,
-  }));
+function fmtPrice(n?: number | null) {
+  if (n === null || n === undefined || Number.isNaN(n)) return "—";
+  return n.toLocaleString("en-US", { maximumFractionDigits: 2 });
 }
 
 function sumChunks(points: DayPoint[], size: number): PnlPoint[] {
@@ -118,8 +91,199 @@ function sumChunks(points: DayPoint[], size: number): PnlPoint[] {
   return out;
 }
 
-const SampleBadge = ({ text = "DEMO / SAMPLE DATA" }: { text?: string }) => (
-  <span className={`${plexMono.className} inline-flex rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold tracking-wider text-amber-600 dark:text-amber-400`}>
+/* ───────────────── Backend API types & mappers ───────────────── */
+
+interface ApiSummary {
+  balance: number | null; available: number | null; equity: number | null;
+  currency: string | null; openPositionsCount: number; openPnl: number; todayPnl: number | null;
+}
+interface ApiPosition {
+  id: string; symbol: string | null; epic: string | null; dir: string;
+  entry: number | null; current: number | null; size: number | null;
+  sl: number | null; tp: number | null; pl: number | null; status: string;
+}
+interface ApiTrade {
+  id: string | null; epic: string | null; symbol: string | null; direction: string | null;
+  size: number | null; entry: number | null; exit: number | null;
+  profit: number | null; type: string | null; status: string | null;
+  openedAt: string | null; closedAt: string | null;
+}
+interface AnalyticsDaily { date: string; value: number }
+
+interface TradingData {
+  loading: boolean;
+  error: string | null;
+  source: "broker" | "stale_cache" | "unavailable" | "";
+  environment: Mode;
+  connected: boolean;
+  summary: ApiSummary | null;
+  positions: Position[];
+  trades: Trade[];
+  daily: { date: string; value: number }[];
+  winRate: number | null;
+  wins: number;
+  losses: number;
+  botState: BotState;
+  emergencyStop: boolean;
+  refresh: () => void;
+  setBot: (s: BotState) => Promise<void>;
+  setEmergencyStop: (v: boolean) => Promise<void>;
+  setEnvironment: (m: Mode) => Promise<boolean>;
+}
+
+function mapPosition(p: ApiPosition): Position | null {
+  const dir = String(p.dir ?? "").toUpperCase();
+  if (dir !== "BUY" && dir !== "SELL") return null;
+  return {
+    id: String(p.id ?? `${p.epic}-${Date.now()}`),
+    symbol: p.symbol || p.epic || "Unknown",
+    dir,
+    entry: p.entry,
+    current: p.current,
+    size: p.size,
+    sl: p.sl,
+    tp: p.tp,
+    pl: p.pl,
+  };
+}
+
+function mapTrade(t: ApiTrade, idx: number): Trade | null {
+  const dir = String(t.direction ?? "").toUpperCase();
+  if (dir !== "BUY" && dir !== "SELL") return null;
+  const pl = t.profit ?? null;
+  const status: Trade["status"] =
+    String(t.status ?? "").toUpperCase() === "OPEN" ? "OPEN" : pl == null ? "OPEN" : pl > 0 ? "WIN" : pl < 0 ? "LOSS" : "WIN";
+  return {
+    id: String(t.id ?? `trade-${idx}`),
+    symbol: t.symbol || t.epic || "Unknown",
+    dir,
+    entry: t.entry,
+    exit: t.exit,
+    opened: t.openedAt ?? "",
+    closed: t.closedAt,
+    pl,
+    status,
+  };
+}
+
+async function apiGet<T>(url: string): Promise<T> {
+  const res = await fetch(url, { cache: "no-store" });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data as { error?: string }).error || `Request failed (${res.status})`);
+  return data as T;
+}
+
+async function apiSend<T>(url: string, method: string, body?: unknown): Promise<T> {
+  const res = await fetch(url, {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data as { error?: string }).error || `Request failed (${res.status})`);
+  return data as T;
+}
+
+/** Fetches all trading data for the current environment. */
+function useTradingData(environment: Mode): TradingData {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [source, setSource] = useState<TradingData["source"]>("");
+  const [connected, setConnected] = useState(false);
+  const [summary, setSummary] = useState<ApiSummary | null>(null);
+  const [positions, setPositions] = useState<Position[]>([]);
+  const [trades, setTrades] = useState<Trade[]>([]);
+  const [daily, setDaily] = useState<{ date: string; value: number }[]>([]);
+  const [winRate, setWinRate] = useState<number | null>(null);
+  const [wins, setWins] = useState(0);
+  const [losses, setLosses] = useState(0);
+  const [botState, setBotState] = useState<BotState>("stopped");
+  const [emergencyStop, setEmergencyStopState] = useState(false);
+  const [tick, setTick] = useState(0);
+
+  const refresh = useCallback(() => setTick((t) => t + 1), []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const [dash, pos, hist, ana, bot] = await Promise.all([
+          apiGet<{
+            environment?: Mode; source?: TradingData["source"]; account?: { balance?: number } | null;
+            summary?: ApiSummary; bot?: { state?: BotState; emergencyStop?: boolean; environment?: Mode } | null;
+            reason?: string;
+          }>("/api/admin/trading/dashboard"),
+          apiGet<{ positions?: ApiPosition[] }>("/api/admin/trading/positions").catch(() => ({ positions: [] })),
+          apiGet<{ trades?: ApiTrade[] }>("/api/admin/trading/history?days=90").catch(() => ({ trades: [] })),
+          apiGet<{ daily?: AnalyticsDaily[]; winRate?: number | null; wins?: number; losses?: number }>(
+            "/api/admin/trading/analytics?days=90"
+          ).catch((): { daily?: AnalyticsDaily[]; winRate?: number | null; wins?: number; losses?: number } => ({ daily: [] })),
+          apiGet<{ bot?: { state?: BotState; emergencyStop?: boolean; environment?: Mode } | null }>(
+            "/api/admin/trading/bot"
+          ).catch(() => ({ bot: null })),
+        ]);
+        if (cancelled) return;
+
+        const dashConnected = dash.source !== "unavailable";
+        setConnected(dashConnected);
+        setSource(dash.source ?? "");
+        setSummary(dash.summary ?? null);
+        setPositions((pos.positions ?? []).map(mapPosition).filter((p): p is Position => p !== null));
+        setTrades((hist.trades ?? []).map(mapTrade).filter((t): t is Trade => t !== null));
+        setDaily((ana.daily ?? []).map((d) => ({ date: d.date, value: d.value })));
+        setWinRate(ana.winRate ?? null);
+        setWins(ana.wins ?? 0);
+        setLosses(ana.losses ?? 0);
+        const bs = bot.bot?.state ?? dash.bot?.state;
+        if (bs) setBotState(bs as BotState);
+        const es = bot.bot?.emergencyStop ?? dash.bot?.emergencyStop;
+        if (typeof es === "boolean") setEmergencyStopState(es);
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load trading data");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [environment, tick]);
+
+  const setBot = useCallback(async (s: BotState) => {
+    const data = await apiSend<{ bot?: { state?: BotState } }>("/api/admin/trading/bot", "PUT", { state: s });
+    const next = (data.bot?.state ?? s) as BotState;
+    setBotState(next);
+  }, []);
+
+  const setEmergencyStop = useCallback(async (v: boolean) => {
+    const data = await apiSend<{ bot?: { emergencyStop?: boolean } }>("/api/admin/trading/bot", "PUT", { emergencyStop: v });
+    setEmergencyStopState(data.bot?.emergencyStop ?? v);
+  }, []);
+
+  const setEnvironment = useCallback(async (m: Mode) => {
+    try {
+      await apiSend("/api/admin/trading/environment", "PUT", { environment: m });
+      setTick((t) => t + 1);
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
+
+  return {
+    loading, error, source, environment, connected, summary, positions, trades,
+    daily, winRate, wins, losses, botState, emergencyStop,
+    refresh, setBot, setEmergencyStop, setEnvironment,
+  };
+}
+
+const SampleBadge = ({ text = "DEMO / SAMPLE DATA", tone = "amber" }: { text?: string; tone?: "amber" | "green" }) => (
+  <span className={`${plexMono.className} inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold tracking-wider ${
+    tone === "green"
+      ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+      : "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400"
+  }`}>
     {text}
   </span>
 );
@@ -175,7 +339,51 @@ function Notice({ tone, children }: { tone: "warn" | "danger" | "info"; children
 const INPUT_CLS =
   "h-10 w-full rounded-lg border border-border/60 bg-background px-3 text-sm outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-violet-500/60 focus:ring-2 focus:ring-violet-500/20";
 
-function CapitalConnectForm({ env }: { env: Mode }) {
+function SecretInput({
+  id, icon, label, value, onChange, placeholder, hint, autoComplete = "off",
+}: {
+  id: string;
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+  hint?: string;
+  autoComplete?: string;
+}) {
+  const [show, setShow] = useState(false);
+  return (
+    <div className="space-y-1.5">
+      <label htmlFor={id} className="flex items-center gap-1.5 text-xs font-semibold">
+        {icon} {label}
+      </label>
+      <div className="relative">
+        <input
+          id={id}
+          type={show ? "text" : "password"}
+          required
+          autoComplete={autoComplete}
+          spellCheck={false}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          className={`${INPUT_CLS} pr-10`}
+        />
+        <button
+          type="button"
+          onClick={() => setShow((s) => !s)}
+          aria-label={show ? "Hide password" : "Show password"}
+          className="absolute right-2.5 top-1/2 -translate-y-1/2 cursor-pointer text-muted-foreground transition-colors hover:text-foreground"
+        >
+          {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+        </button>
+      </div>
+      {hint && <p className="text-[11px] text-muted-foreground">{hint}</p>}
+    </div>
+  );
+}
+
+function CapitalConnectForm({ env, onSuccess }: { env: Mode; onSuccess?: () => void }) {
   const [email, setEmail] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [apiPassword, setApiPassword] = useState("");
@@ -190,17 +398,18 @@ function CapitalConnectForm({ env }: { env: Mode }) {
     setStatus("loading");
     setMessage("");
     try {
-      const res = await fetch("/api/capital/connect", {
+      const res = await fetch("/api/admin/capital/connect", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: email.trim(), apiKey: apiKey.trim(), apiPassword, env }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.message || "Could not connect. Check your details and try again.");
+      if (!res.ok || data.connected === false) throw new Error(data.error || data.message || "Could not connect. Check your details and try again.");
       setStatus("success");
       setMessage("Capital.com account connected.");
       // Never keep credentials in the browser after submitting.
       setEmail(""); setApiKey(""); setApiPassword("");
+      onSuccess?.();
     } catch (err) {
       setStatus("error");
       setMessage(err instanceof Error ? err.message : "Something went wrong. Try again.");
@@ -210,7 +419,8 @@ function CapitalConnectForm({ env }: { env: Mode }) {
   return (
     <form onSubmit={submit} autoComplete="off" className="space-y-4 rounded-2xl border border-violet-500/20 bg-card p-5 shadow-sm">
       <div>
-        <p className="text-base font-bold">Connect your Capital.com account</p>
+        <p className={`${plexMono.className} text-[11px] tracking-[0.2em] text-violet-600 dark:text-violet-400`}>[ // CONNECT ]</p>
+        <p className="text-xl font-extrabold tracking-tight">Connect your Capital.com account</p>
         <p className="mt-1 text-xs text-muted-foreground">
           Enter the three details Capital.com needs to start an API session for your {env === "demo" ? "demo" : "live"} account.
         </p>
@@ -224,23 +434,26 @@ function CapitalConnectForm({ env }: { env: Mode }) {
           onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" className={INPUT_CLS} />
       </div>
 
-      <div className="space-y-1.5">
-        <label htmlFor="cap-key" className="flex items-center gap-1.5 text-xs font-semibold">
-          <KeyRound className="h-3.5 w-3.5 text-violet-500" /> API key
-        </label>
-        <input id="cap-key" type="password" required autoComplete="off" spellCheck={false} value={apiKey}
-          onChange={(e) => setApiKey(e.target.value)} placeholder="Paste your API key" className={INPUT_CLS} />
-        <p className="text-[11px] text-muted-foreground">Capital.com → Settings → API integrations.</p>
-      </div>
+      <SecretInput
+        id="cap-key"
+        icon={<KeyRound className="h-3.5 w-3.5 text-violet-500" />}
+        label="API key"
+        value={apiKey}
+        onChange={setApiKey}
+        placeholder="Paste your API key"
+        hint="Capital.com → Settings → API integrations."
+      />
 
-      <div className="space-y-1.5">
-        <label htmlFor="cap-pass" className="flex items-center gap-1.5 text-xs font-semibold">
-          <Lock className="h-3.5 w-3.5 text-violet-500" /> Custom API-key password
-        </label>
-        <input id="cap-pass" type="password" required autoComplete="new-password" value={apiPassword}
-          onChange={(e) => setApiPassword(e.target.value)} placeholder="The password you set for this key" className={INPUT_CLS} />
-        <p className="text-[11px] text-muted-foreground">Not your normal Capital.com login password.</p>
-      </div>
+      <SecretInput
+        id="cap-pass"
+        icon={<Lock className="h-3.5 w-3.5 text-violet-500" />}
+        label="Custom API-key password"
+        value={apiPassword}
+        onChange={setApiPassword}
+        placeholder="The password you set for this key"
+        autoComplete="new-password"
+        hint="Not your normal Capital.com login password."
+      />
 
       {status === "success" && (
         <p role="status" className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">{message}</p>
@@ -460,13 +673,30 @@ const DirTag = ({ dir }: { dir: "BUY" | "SELL" }) => (
   </span>
 );
 
-function PositionsTable() {
+function PositionsTable({ positions, loading, connected, env }: { positions: Position[]; loading: boolean; connected: boolean; env: Mode }) {
   return (
     <Card className="gap-0 overflow-hidden border-violet-500/20 p-0 shadow-sm">
       <CardHeader className="flex flex-row items-center justify-between space-y-0 py-4">
         <CardTitle className="text-xl font-bold">Open Positions</CardTitle>
-        <SampleBadge />
+        <SampleBadge
+          text={connected ? `CAPITAL.COM · ${env.toUpperCase()}` : "NOT CONNECTED"}
+          tone={env === "live" ? "green" : "amber"}
+        />
       </CardHeader>
+      {loading ? (
+        <div className="flex items-center justify-center gap-2 py-12 text-muted-foreground">
+          <Loader2 className="h-5 w-5 animate-spin" /> Loading positions…
+        </div>
+      ) : positions.length === 0 ? (
+        <div className="flex flex-col items-center justify-center gap-1 py-12 text-center">
+          <p className="text-sm font-bold text-muted-foreground">
+            {connected ? "No open positions" : "Broker not connected"}
+          </p>
+          <p className="text-[11px] text-muted-foreground">
+            {connected ? "Open positions from Capital.com will appear here." : "Connect your Capital.com account in Trading Setup to see real positions."}
+          </p>
+        </div>
+      ) : (
       <TableShell min={900}>
         <thead>
           <tr className="border-y border-border/50 bg-muted/20">
@@ -474,21 +704,22 @@ function PositionsTable() {
           </tr>
         </thead>
         <tbody className="divide-y divide-border/40">
-          {POSITIONS.map((p) => (
+          {positions.map((p) => (
             <tr key={p.id} className="hover:bg-muted/30">
               <td className={`${TD} font-bold`}>{p.symbol}</td>
               <td className={TD}><DirTag dir={p.dir} /></td>
-              <td className={TD}>{p.entry}</td>
-              <td className={TD}>{p.current}</td>
-              <td className={TD}>{p.size.toFixed(2)}</td>
-              <td className={TD}>{p.sl}</td>
-              <td className={TD}>{p.tp}</td>
-              <td className={`${TD} font-bold ${plTone(p.pl)}`}>{signed(p.pl)}</td>
+              <td className={TD}>{fmtPrice(p.entry)}</td>
+              <td className={TD}>{fmtPrice(p.current)}</td>
+              <td className={TD}>{p.size != null ? p.size.toFixed(2) : "—"}</td>
+              <td className={TD}>{fmtPrice(p.sl)}</td>
+              <td className={TD}>{fmtPrice(p.tp)}</td>
+              <td className={`${TD} font-bold ${p.pl != null ? plTone(p.pl) : ""}`}>{p.pl != null ? signed(p.pl) : "—"}</td>
               <td className={TD}><span className="rounded-full border border-violet-500/30 bg-violet-500/10 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-widest text-violet-600 dark:text-violet-300">Open</span></td>
             </tr>
           ))}
         </tbody>
       </TableShell>
+      )}
     </Card>
   );
 }
@@ -524,8 +755,8 @@ function ToggleRow({ label, desc, on, onToggle }: { label: string; desc: string;
 }
 
 function BotControl({
-  a, credits, bot, setBot, env, onEnv,
-}: { a: Answers; credits: number; bot: BotState; setBot: (b: BotState) => void; env: Mode; onEnv: (m: Mode) => void }) {
+  a, credits, bot, setBot, env, onEnv, statusNote,
+}: { a: Answers; credits: number; bot: BotState; setBot: (b: BotState) => void; env: Mode; onEnv: (m: Mode) => void; statusNote?: string }) {
   const rows = [
     ["Pair", "XAU/USD"],
     ["Level", a.experience || "Not set"],
@@ -535,7 +766,10 @@ function BotControl({
     <Card className="gap-3 border-violet-500/20 py-4 shadow-sm">
       <CardHeader className="flex flex-row items-center justify-between space-y-0 px-4">
         <CardTitle className="flex items-center gap-2 text-lg font-bold"><Bot className="h-4 w-4 text-violet-500" /> Bot Control</CardTitle>
-        <SampleBadge text="UI DEMO ONLY" />
+        <SampleBadge
+          text={statusNote ? `BACKEND LINKED · ${env.toUpperCase()}` : "PREFERENCE ONLY"}
+          tone={env === "live" ? "green" : "amber"}
+        />
       </CardHeader>
       <CardContent className="space-y-3 px-4">
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
@@ -564,7 +798,6 @@ function BotControl({
             onToggle={() => setBot(bot === "paused" ? "running" : "paused")}
           />
         </div>
-        {env === "live" && <Notice tone="danger">Live is a preview only. No trades are placed from this screen.</Notice>}
         <div className="grid grid-cols-3 gap-2">
           {rows.map(([k, v]) => (
             <div key={k} className="rounded-lg border border-border/60 bg-muted/20 px-3 py-2">
@@ -573,7 +806,7 @@ function BotControl({
             </div>
           ))}
         </div>
-        <p className="text-xs text-muted-foreground">Demonstration only. No bot is running.</p>
+        <p className="text-xs text-muted-foreground">{statusNote ?? "Automation preference only — order execution requires a connected broker."}</p>
       </CardContent>
     </Card>
   );
@@ -635,9 +868,18 @@ function PnlBarChart({
   );
 }
 
-function Analytics() {
+function Analytics({
+  series, winRate: apiWinRate, wins: apiWins, losses: apiLosses, loading, env,
+}: {
+  series: { date: string; value: number }[];
+  winRate: number | null; wins: number; losses: number; loading: boolean; env: Mode;
+}) {
   const [period, setPeriod] = useState<"7" | "30" | "90">("30");
-  const full = useMemo(() => generateSeries(7, 90), []);
+  // Normalize broker daily series into DayPoint shape for chunking.
+  const full = useMemo<DayPoint[]>(
+    () => series.map((p) => ({ date: new Date(`${p.date}T00:00:00Z`).toISOString(), value: p.value })),
+    [series],
+  );
 
   const daily = useMemo(
     () => full.slice(-Number(period)).map((p) => ({ x: p.date, value: p.value })),
@@ -647,12 +889,12 @@ function Analytics() {
   const monthly = useMemo(() => sumChunks(full, 30), [full]);
 
   const total = daily.reduce((a, d) => a + d.value, 0);
-  const best = Math.max(...daily.map((d) => d.value));
-  const worst = Math.min(...daily.map((d) => d.value));
+  const best = daily.length ? Math.max(...daily.map((d) => d.value)) : 0;
+  const worst = daily.length ? Math.min(...daily.map((d) => d.value)) : 0;
 
-  const wins = TRADES.filter((t) => t.status === "WIN").length;
-  const losses = TRADES.filter((t) => t.status === "LOSS").length;
-  const rate = Math.round((wins / (wins + losses)) * 100);
+  const wins = apiWins;
+  const losses = apiLosses;
+  const rate = apiWinRate ?? (wins + losses > 0 ? Math.round((wins / (wins + losses)) * 100) : 0);
 
   const summary = [
     { label: "Net", value: total },
@@ -662,28 +904,37 @@ function Analytics() {
 
   return (
     <div className="space-y-6">
+      {loading && (
+        <div className="flex items-center justify-center gap-2 rounded-xl border border-border/60 bg-muted/20 py-6 text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading analytics…
+        </div>
+      )}
+      {!loading && series.length === 0 && (
+        <p className="rounded-xl border border-border/60 bg-muted/20 px-4 py-3 text-xs text-muted-foreground">
+          No trading activity in this period yet. Analytics are built from real Capital.com account history.
+        </p>
+      )}
       {/* Daily profit / loss: interactive bar chart */}
-      <Card className="gap-0 overflow-hidden border-violet-500/20 py-0 shadow-sm">
-        <CardHeader className="flex flex-col items-stretch gap-0 border-b p-0 sm:flex-row">
-          <div className="flex flex-1 flex-col justify-center gap-2 px-6 pb-3 pt-4 sm:py-0">
-            <div className="flex items-center gap-3">
-              <CardTitle className="text-lg font-extrabold tracking-tight">Daily Profit / Loss</CardTitle>
-              <SampleBadge />
+      <Card className="border-violet-500/20 shadow-sm">
+        <CardHeader>
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+            <div>
+              <CardTitle className="text-xl font-bold">Daily Profit / Loss</CardTitle>
+              <CardDescription className="mt-1">Net result per day over the last {period} days</CardDescription>
             </div>
-            <CardDescription>Net result per day over the last {period} days</CardDescription>
-            <div><Segmented value={period} onChange={setPeriod} options={[{ key: "7", label: "7D" }, { key: "30", label: "30D" }, { key: "90", label: "90D" }]} /></div>
-          </div>
-          <div className="flex">
-            {summary.map((s) => (
-              <div key={s.label} className="relative flex flex-1 flex-col justify-center gap-1 border-t px-6 py-4 text-left even:border-l sm:border-l sm:border-t-0 sm:px-8 sm:py-6">
-                <span className="text-xs text-muted-foreground">{s.label}</span>
-                <span className={`font-mono text-lg font-bold leading-none tabular-nums sm:text-2xl ${plTone(s.value)}`}>{signed(s.value)}</span>
-              </div>
-            ))}
+            <Segmented value={period} onChange={setPeriod} options={[{ key: "7", label: "7D" }, { key: "30", label: "30D" }, { key: "90", label: "90D" }]} />
+            <div className="flex overflow-hidden rounded-xl border border-border/60">
+              {summary.map((s, i) => (
+                <div key={s.label} className={`flex flex-1 flex-col justify-center gap-0.5 px-4 py-2.5 text-left ${i > 0 ? "border-l border-border/60" : ""}`}>
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{s.label}</span>
+                  <span className={`font-mono text-sm font-bold leading-none tabular-nums ${plTone(s.value)}`}>{signed(s.value)}</span>
+                </div>
+              ))}
+            </div>
           </div>
         </CardHeader>
-        <CardContent className="px-2 py-4 sm:p-6">
-          <PnlBarChart data={daily} tickFormatter={shortDate} labelFormatter={longDate} />
+        <CardContent className="px-2 sm:px-6">
+          <PnlBarChart data={daily} tickFormatter={shortDate} labelFormatter={longDate} height="h-[280px]" />
         </CardContent>
       </Card>
 
@@ -692,7 +943,7 @@ function Analytics() {
           <CardHeader>
             <div className="flex items-center justify-between gap-3">
               <CardTitle className="text-xl font-bold">Weekly Performance</CardTitle>
-              <SampleBadge />
+              <SampleBadge text={`CAPITAL.COM · ${env.toUpperCase()}`} tone={env === "live" ? "green" : "amber"} />
             </div>
             <CardDescription>Net P/L per week, last 12 weeks</CardDescription>
           </CardHeader>
@@ -705,7 +956,7 @@ function Analytics() {
           <CardHeader>
             <div className="flex items-center justify-between gap-3">
               <CardTitle className="text-xl font-bold">Monthly Performance</CardTitle>
-              <SampleBadge />
+              <SampleBadge text={`CAPITAL.COM · ${env.toUpperCase()}`} tone={env === "live" ? "green" : "amber"} />
             </div>
             <CardDescription>Net P/L per 30-day period, last 90 days</CardDescription>
           </CardHeader>
@@ -718,10 +969,10 @@ function Analytics() {
       {/* Winning vs losing trades: unchanged */}
       <Card className="border-violet-500/20 shadow-sm">
         <CardHeader className="flex flex-row items-center justify-between space-y-0">
-          <CardTitle className="text-xl font-bold">Winning vs Losing Trades</CardTitle><SampleBadge />
+          <CardTitle className="text-xl font-bold">Winning vs Losing Trades</CardTitle><SampleBadge text={`CAPITAL.COM · ${env.toUpperCase()}`} tone={env === "live" ? "green" : "amber"} />
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="flex h-4 w-full overflow-hidden rounded-full bg-muted">
+          <div className="flex h-2 w-full overflow-hidden rounded-full bg-muted">
             <div className="bg-emerald-500" style={{ width: `${rate}%` }} />
             <div className="bg-red-500" style={{ width: `${100 - rate}%` }} />
           </div>
@@ -739,8 +990,11 @@ function Analytics() {
 /* ───────────────── Trading setup view ───────────────── */
 
 function SetupView({
-  answers, env, onRestart, onReset,
-}: { answers: Answers; env: Mode; onRestart: () => void; onReset: () => void }) {
+  answers, env, connected, onRestart, onReset, onConnected,
+}: {
+  answers: Answers; env: Mode; connected: boolean;
+  onRestart: () => void; onReset: () => void; onConnected?: () => void;
+}) {
   return (
     <div className="grid items-start gap-6 lg:grid-cols-[22rem_minmax(0,1fr)]">
       {/* Left: stays in place while the right side scrolls */}
@@ -762,6 +1016,15 @@ function SetupView({
               }
             />
             <p className="text-center text-[11px] text-muted-foreground">{DISCLAIMER}</p>
+            <p className={`text-center text-xs font-bold ${
+              !connected
+                ? "text-amber-600 dark:text-amber-400"
+                : env === "live"
+                  ? "text-emerald-600 dark:text-emerald-400"
+                  : "text-amber-600 dark:text-amber-400"
+            }`}>
+              {connected ? `Connected · ${env.toUpperCase()} environment` : "Not connected"}
+            </p>
           </CardContent>
         </Card>
 
@@ -771,7 +1034,7 @@ function SetupView({
             <CardDescription>Your saved setup answers.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid gap-2 sm:grid-cols-2">
+            <div className="grid gap-2 grid-cols-2 sm:grid-cols-2">
               {[["Pair", "XAU/USD"], ["Experience", answers.experience || "Not set"]].map(([k, v]) => (
                 <div key={k} className="rounded-xl border border-border/60 bg-muted/20 px-4 py-3">
                   <p className="text-[10px] uppercase tracking-wider text-muted-foreground">{k}</p>
@@ -795,12 +1058,12 @@ function SetupView({
 
       {/* Right: connect form first, then API guide */}
       <div className="min-w-0 space-y-6">
-        <CapitalConnectForm env={env} />
+        <CapitalConnectForm env={env} onSuccess={onConnected} />
 
         <Card className="border-violet-500/20 shadow-sm">
           <CardHeader>
             <p className={`${plexMono.className} text-[11px] tracking-[0.2em] text-violet-600 dark:text-violet-400`}>[ // CAPITAL.COM API ]</p>
-            <CardTitle className="text-2xl font-extrabold tracking-tight">Power your bot through the Capital.com API</CardTitle>
+            <CardTitle className="text-xl font-extrabold tracking-tight">Power your bot through the Capital.com API</CardTitle>
             <CardDescription>
               The bot opens and manages XAU/USD trades through an API key you create in your own Capital.com account.
               You stay in control and can delete the key at any time.
@@ -821,20 +1084,56 @@ function Dashboard({
   answers, setAnswers, onRestart,
 }: { answers: Answers; setAnswers: (a: Answers) => void; onRestart: () => void }) {
   const [view, setView] = useState<View>("dashboard");
-  const [bot, setBot] = useState<BotState>("stopped");
   const [confirmLive, setConfirmLive] = useState(false);
+  const [envBusy, setEnvBusy] = useState(false);
   const env = answers.env;
   const credits = 120;
 
-  const closedTrades = TRADES.filter((t) => t.status !== "OPEN");
-  const winRate = Math.round((closedTrades.filter((t) => t.status === "WIN").length / closedTrades.length) * 100);
-  const totalProfit = closedTrades.reduce((a, t) => a + t.pl, 0);
-  const openPl = POSITIONS.reduce((a, p) => a + p.pl, 0);
+  const data = useTradingData(env);
+
+  const closedTrades = data.trades.filter((t) => t.status !== "OPEN");
+  const totalProfit = closedTrades.reduce((a, t) => a + (t.pl ?? 0), 0);
+  const openPl = data.positions.reduce((a, p) => a + (p.pl ?? 0), 0);
+
+  const applyEnv = async (m: Mode) => {
+    setEnvBusy(true);
+    try {
+      const ok = await data.setEnvironment(m);
+      if (ok) {
+        setAnswers({ ...answers, env: m });
+        toast.success(`Environment set to ${m.toUpperCase()}`);
+      } else {
+        toast.error(
+          m === "live"
+            ? "Live environment is not available — broker session could not be verified."
+            : "Could not switch environment. Try again."
+        );
+      }
+    } finally {
+      setEnvBusy(false);
+    }
+  };
 
   const switchEnv = (m: Mode) => {
+    if (m === env) return;
     if (m === "live") setConfirmLive(true);
-    else setAnswers({ ...answers, env: "demo" });
+    else void applyEnv("demo");
   };
+
+  const handleBot = async (s: BotState) => {
+    try {
+      await data.setBot(s);
+      toast.success(`Bot ${s === "running" ? "start" : s === "paused" ? "paused" : "stopped"} preference saved`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to update bot");
+    }
+  };
+
+  const statusNote = !data.connected
+    ? "Broker not connected — connect Capital.com in Trading Setup."
+    : data.botState === "running"
+      ? `Automation armed for ${env.toUpperCase()} — executing validated signals via Capital.com.`
+      : "Automation preference saved. Start the bot to allow signal execution.";
 
   const reset = () => {
     try { localStorage.removeItem(STORAGE_KEY); } catch { /* ignore */ }
@@ -843,6 +1142,11 @@ function Dashboard({
   };
 
   const current = NAV.find((n) => n.key === view);
+  const badgeText = data.connected
+    ? `CAPITAL.COM · ${env.toUpperCase()}`
+    : data.loading
+      ? "LOADING…"
+      : "NOT CONNECTED";
 
   return (
     <div className="space-y-4 py-4">
@@ -869,46 +1173,183 @@ function Dashboard({
             Shill<span className="bg-gradient-to-r from-violet-600 to-purple-600 bg-clip-text text-transparent dark:from-violet-400 dark:to-purple-400">monger</span> Terminal
           </h1>
         </div>
-        <SampleBadge />
+        <SampleBadge text={badgeText} tone={env === "live" ? "green" : "amber"} />
       </div>
+
+      {data.error && (
+        <div className="flex items-center gap-2 rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-xs font-semibold text-rose-600 dark:text-rose-300">
+          <AlertTriangle className="h-4 w-4 shrink-0" /> {data.error}
+        </div>
+      )}
 
       {view === "dashboard" && (
         <>
           <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
-            <StatCard icon={<Wallet className="h-4 w-4" />} label="Account Balance" value={money(10425.5)} tone="bg-violet-500/15 text-violet-600 dark:text-violet-400" />
-            <StatCard icon={openPl >= 0 ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />} label="Today's P/L" value={signed(openPl)} valueCls={plTone(openPl)} tone="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" />
-            <StatCard icon={<Trophy className="h-4 w-4" />} label="Total Profit" value={signed(totalProfit)} valueCls={plTone(totalProfit)} tone="bg-purple-500/15 text-purple-600 dark:text-purple-400" />
-            <StatCard icon={<LineChart className="h-4 w-4" />} label="Open Positions" value={String(POSITIONS.length)} tone="bg-violet-500/15 text-violet-600 dark:text-violet-400" />
-            <StatCard icon={<Percent className="h-4 w-4" />} label="Win Rate" value={`${winRate}%`} tone="bg-rose-500/15 text-rose-600 dark:text-rose-400" />
+            <StatCard
+              icon={<Wallet className="h-4 w-4" />}
+              label="Account Balance"
+              value={data.summary?.balance != null ? money(data.summary.balance) : "—"}
+              tone="bg-violet-500/15 text-violet-600 dark:text-violet-400"
+            />
+            <StatCard
+              icon={openPl >= 0 ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
+              label="Open P/L"
+              value={data.positions.length ? signed(openPl) : "—"}
+              valueCls={plTone(openPl)}
+              tone="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+            />
+            <StatCard
+              icon={<Trophy className="h-4 w-4" />}
+              label="Total Profit"
+              value={closedTrades.length ? signed(totalProfit) : "—"}
+              valueCls={plTone(totalProfit)}
+              tone="bg-purple-500/15 text-purple-600 dark:text-purple-400"
+            />
+            <StatCard
+              icon={<LineChart className="h-4 w-4" />}
+              label="Open Positions"
+              value={String(data.summary?.openPositionsCount ?? data.positions.length)}
+              tone="bg-violet-500/15 text-violet-600 dark:text-violet-400"
+            />
+            <StatCard
+              icon={<Percent className="h-4 w-4" />}
+              label="Win Rate"
+              value={data.winRate != null ? `${data.winRate}%` : "—"}
+              tone="bg-rose-500/15 text-rose-600 dark:text-rose-400"
+            />
           </section>
-          <BotControl a={answers} credits={credits} bot={bot} setBot={setBot} env={env} onEnv={switchEnv} />
-          <PositionsTable />
+          <BotControl
+            a={answers}
+            credits={credits}
+            bot={data.botState}
+            setBot={(s) => void handleBot(s)}
+            env={env}
+            onEnv={switchEnv}
+            statusNote={statusNote}
+          />
+          {data.emergencyStop && (
+            <div className="flex items-center gap-2 rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-xs font-bold text-rose-600 dark:text-rose-300">
+              <ShieldAlert className="h-4 w-4 shrink-0" /> EMERGENCY STOP ACTIVE — no new trades will be submitted.
+            </div>
+          )}
+          <PositionsTable positions={data.positions} loading={data.loading} connected={data.connected} env={env} />
         </>
       )}
 
-      {view === "analytics" && <Analytics />}
+      {view === "analytics" && (
+        <Analytics
+          series={data.daily}
+          winRate={data.winRate}
+          wins={data.wins}
+          losses={data.losses}
+          loading={data.loading}
+          env={env}
+        />
+      )}
 
-      {view === "setup" && <SetupView answers={answers} env={env} onRestart={onRestart} onReset={reset} />}
+      {view === "setup" && (
+        <SetupView
+          answers={answers}
+          env={env}
+          connected={data.connected}
+          onRestart={onRestart}
+          onReset={reset}
+          onConnected={data.refresh}
+        />
+      )}
 
       <p className="pb-4 text-center text-[11px] text-muted-foreground">
-        Leveraged trading and CFDs carry significant risk of loss. All figures shown are simulated sample data.
+        Leveraged trading and CFDs carry significant risk of loss. Figures shown come from your connected Capital.com {env.toUpperCase()} account.
       </p>
 
-      {confirmLive && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4" role="dialog" aria-modal="true">
-          <Card className="w-full max-w-md border-rose-500/30">
-            <CardContent className="space-y-4 p-6">
-              <ShieldAlert className="h-9 w-9 text-rose-500" />
-              <h2 className="text-lg font-extrabold">Switch to Live?</h2>
-              <p className="text-sm text-muted-foreground">Real money is at risk in live trading. In this preview, Live is only a display setting and no trades will be placed.</p>
-              <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setConfirmLive(false)} className="rounded-lg">Stay on Demo</Button>
-                <Button onClick={() => { setAnswers({ ...answers, env: "live" }); setConfirmLive(false); }} className="rounded-lg bg-gradient-to-r from-violet-600 to-purple-600 text-white">I understand, switch</Button>
-              </div>
-            </CardContent>
-          </Card>
+      
+{confirmLive && (
+  <div
+    className="fixed inset-0 z-500 flex items-center justify-center
+    bg-black/40 px-4 py-6 backdrop-blur-sm
+    animate-in fade-in duration-300"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="live-dialog-title"
+  >
+    <Card className="
+      w-full max-w-md overflow-hidden
+      rounded-2xl border border-rose-500/20
+      bg-background/95 text-foreground
+      shadow-2xl shadow-black/20
+      backdrop-blur-2xl
+      animate-in zoom-in-95 slide-in-from-bottom-3 duration-300
+    ">
+      <CardContent className="space-y-5 p-5 sm:p-5">
+
+        {/* Icon */}
+        <div className="flex h-10 w-10 items-center justify-center
+          rounded-xl border border-rose-500/20
+          bg-rose-500/10 shadow-inner"
+        >
+          <ShieldAlert className="h-5 w-5 text-rose-500" />
         </div>
-      )}
+
+        {/* Content */}
+        <div className="space-y-2">
+          <h2
+            id="live-dialog-title"
+            className="text-xl font-extrabold tracking-tight"
+          >
+            Switch to Live?
+          </h2>
+
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            Live trading uses real funds on your Capital.com account. The switch is verified
+            server-side — if your live session cannot be authenticated, the environment will not change.
+          </p>
+        </div>
+
+        {/* Buttons */}
+        <div className="
+          flex w-full flex-col gap-2
+          sm:flex-row sm:justify-end
+        ">
+          <Button
+            variant="outline"
+            onClick={() => setConfirmLive(false)}
+            className="
+              h-11 w-full rounded-xl
+              border-border bg-background
+              transition-all duration-200
+              hover:border-muted-foreground/40
+              sm:flex-1
+            "
+          >
+            Stay on Demo
+          </Button>
+
+          <Button
+            disabled={envBusy}
+            onClick={() => {
+              setConfirmLive(false);
+              void applyEnv("live");
+            }}
+            className="
+              h-11 w-full rounded-xl
+              bg-gradient-to-r from-violet-600 to-purple-600
+              font-semibold text-white
+              shadow-lg shadow-violet-500/20
+              transition-all duration-200
+              hover:scale-[1.02] hover:from-violet-500 hover:to-purple-500
+              active:scale-[0.98]
+              sm:flex-1
+            "
+          >
+            I understand, switch
+          </Button>
+        </div>
+
+      </CardContent>
+    </Card>
+  </div>
+)}
+
     </div>
   );
 }
@@ -921,15 +1362,20 @@ export default function TradingSetupPage() {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as { answers: Answers; done: boolean };
-        setAnswers({ ...EMPTY, ...parsed.answers });
-        setDone(!!parsed.done);
-      }
-    } catch { /* storage unavailable: start fresh */ }
-    setReady(true);
+    // Deferred so localStorage reads (and the resulting setState) do not
+    // run synchronously inside the effect body.
+    const timer = setTimeout(() => {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw) as { answers: Answers; done: boolean };
+          setAnswers({ ...EMPTY, ...parsed.answers });
+          setDone(!!parsed.done);
+        }
+      } catch { /* storage unavailable: start fresh */ }
+      setReady(true);
+    }, 0);
+    return () => clearTimeout(timer);
   }, []);
 
   useEffect(() => {

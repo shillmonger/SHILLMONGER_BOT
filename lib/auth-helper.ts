@@ -51,3 +51,20 @@ export async function getAdminUser() {
   }
   return user;
 }
+
+/**
+ * Admin-only guard for personal trading endpoints.
+ * Returns the admin user, or a NextResponse-ready 401/403 marker.
+ * Usage: const guard = await requireAdmin(); if (guard instanceof NextResponse) return guard;
+ */
+export async function requireAdmin() {
+  const { NextResponse } = await import('next/server');
+  const user = await getCurrentUser();
+  if (!user) {
+    return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+  }
+  if (user.role !== 'admin') {
+    return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
+  }
+  return user;
+}
