@@ -395,8 +395,32 @@ function PerformanceBarChart({
 }) {
   const [mode, setMode] = useState<Mode>("demo");
   const [active, setActive] = useState<number | null>(null);
+  const [compact, setCompact] = useState(false);
+
+  // Downsample bars on small screens so ~90 daily bars don't collapse into
+  // unreadable slivers. Deferred setState to satisfy react-hooks rules.
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 640px)");
+    const apply = () => setCompact(mq.matches);
+    const t = setTimeout(apply, 0);
+    mq.addEventListener("change", apply);
+    return () => {
+      clearTimeout(t);
+      mq.removeEventListener("change", apply);
+    };
+  }, []);
 
   const points = series[mode];
+
+  // On mobile keep roughly every Nth point (~15 bars max) so each bar stays
+  // readable; desktop renders the full daily series.
+  const displayPoints = useMemo(() => {
+    if (!compact || points.length <= 20) return points;
+    const stride = Math.ceil(points.length / 15);
+    const out = points.filter((_, i) => i % stride === 0);
+    if (out[out.length - 1] !== points[points.length - 1]) out.push(points[points.length - 1]);
+    return out;
+  }, [points, compact]);
 
   const totals = useMemo(
     () => ({
@@ -418,7 +442,7 @@ function PerformanceBarChart({
     return "high";
   };
 
-  const activePoint = active !== null ? points[active] : null;
+  const activePoint = active !== null ? displayPoints[active] : null;
   const activeLevel = activePoint ? levelOf(activePoint.value) : null;
 
   const tabs: { key: Mode; label: string }[] = [
@@ -451,7 +475,7 @@ function PerformanceBarChart({
                   setActive(null);
                 }}
                 aria-pressed={selected}
-                className={`relative flex min-w-[150px] cursor-pointer flex-col items-start justify-center gap-1 border-l border-border/60 px-6 py-4 text-left transition-colors first:border-l-0 sm:first:border-l ${
+                className={`relative flex min-w-0 cursor-pointer flex-col items-start justify-center gap-1 border-l border-border/60 px-4 py-4 text-left transition-colors first:border-l-0 sm:min-w-[150px] sm:px-6 ${
                   selected
                     ? "bg-violet-500/10"
                     : "hover:bg-muted/40"
@@ -491,7 +515,7 @@ function PerformanceBarChart({
 
           {/* bars */}
           <div className="absolute inset-0 flex items-end">
-            {points.map((p, i) => {
+            {displayPoints.map((p, i) => {
               const level = levelOf(p.value);
               const height = Math.max(4, (p.value / (max || 1)) * 100);
               const dimmed = active !== null && active !== i;
@@ -518,7 +542,7 @@ function PerformanceBarChart({
             <div
               className="pointer-events-none absolute top-0 z-10 w-36 -translate-x-1/2 rounded-xl border border-violet-500/30 bg-popover px-3 py-2 text-popover-foreground shadow-xl shadow-violet-900/20"
               style={{
-                left: `clamp(72px, ${((active + 0.5) / points.length) * 100}%, calc(100% - 72px))`,
+                left: `clamp(72px, ${((active + 0.5) / displayPoints.length) * 100}%, calc(100% - 72px))`,
               }}
             >
               <p className="text-[11px] font-semibold text-muted-foreground">
@@ -541,12 +565,12 @@ function PerformanceBarChart({
 
         {/* x-axis */}
         <div className="mt-2 flex w-full">
-          {points.map((p, i) => (
+          {displayPoints.map((p, i) => (
             <div key={p.date} className="relative h-5 min-w-0 flex-1">
-              {i % 6 === 0 && (
+              {i % Math.max(1, Math.ceil(displayPoints.length / (compact ? 5 : 15))) === 0 && (
                 <span
                   className={`absolute left-1/2 -translate-x-1/2 whitespace-nowrap text-[10px] text-muted-foreground ${
-                    i % 12 === 0 ? "" : "hidden sm:block"
+                    compact || i % 12 === 0 ? "" : "hidden sm:block"
                   }`}
                 >
                   {shortDate(p.date)}
@@ -663,7 +687,8 @@ export default function DashboardPage() {
   }
 
   useEffect(() => {
-    fetchDashboardData();
+    const t = setTimeout(() => void fetchDashboardData(), 0);
+    return () => clearTimeout(t);
   }, []);
 
   if (loading) {

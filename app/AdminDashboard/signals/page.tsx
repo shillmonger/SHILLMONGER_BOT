@@ -1,83 +1,106 @@
 "use client";
 
-import { Fragment, useState, useEffect, useCallback } from "react";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
+import { IBM_Plex_Mono } from "next/font/google";
 import {
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronUp,
+  Clock,
+  Hash,
+  Inbox,
+  Loader2,
+  MessageSquare,
   Radio,
   RefreshCw,
-  Loader2,
-  AlertCircle,
   Search,
-  ArrowUpRight,
-  ArrowDownRight,
-  ChevronDown,
-  ChevronUp,
-  MessageSquare,
-  Hash,
-  Clock,
-  Target,
   ShieldAlert,
+  Target,
 } from "lucide-react";
 
-// Shape of a signal document returned by the Python bot API
-interface Signal {
-  _id: string;
-  chat_id: number;
-  message_id: number;
-  group_name: string;
-  symbol: string;
-  direction: "BUY" | "SELL" | string;
-  order_type?: string;
-  entry: number;
-  entry_high?: number | null;
-  entry_low?: number | null;
-  stop_loss: number;
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+
+const plexMono = IBM_Plex_Mono({
+  weight: ["400", "500", "600"],
+  subsets: ["latin"],
+  display: "swap",
+});
+
+/* ───────────────── Types ───────────────── */
+
+interface SignalRow {
+  id: string;
+  chat_id: number | string | null;
+  message_id: number | null;
+  group_name: string | null;
+  symbol: string | null;
+  direction: string | null;
+  order_type: string | null;
+  entry: number | null;
+  entry_high: number | null;
+  entry_low: number | null;
+  stop_loss: number | null;
   take_profits: number[];
-  raw_message?: string;
-  confidence?: number;
-  timestamp?: string | null;
+  raw_message: string | null;
+  confidence: number | null;
+  timestamp: string | null;
   status: string;
-  ingested_at?: string;
+  ingested_at: string | null;
+  queued_at: string | null;
+  attempts: number | null;
 }
 
-const LIMIT_OPTIONS = [25, 50, 100, 200];
+type SignalType = "signals" | "pending";
 
-function DirectionBadge({ direction }: { direction: string }) {
-  const isBuy = direction === "BUY";
+const PAGE_SIZE = 15;
+
+/* ───────────────── Helpers ───────────────── */
+
+const Badge = ({ text, tone }: { text: string; tone: "green" | "amber" | "red" | "gray" | "blue" | "violet" }) => (
+  <span className={`${plexMono.className} inline-flex whitespace-nowrap rounded-full border px-2 py-0.5 text-[10px] font-semibold tracking-wider ${
+    tone === "green"
+      ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+      : tone === "red"
+        ? "border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400"
+        : tone === "amber"
+          ? "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400"
+          : tone === "blue"
+            ? "border-sky-500/30 bg-sky-500/10 text-sky-600 dark:text-sky-400"
+            : tone === "violet"
+              ? "border-violet-500/30 bg-violet-500/10 text-violet-600 dark:text-violet-400"
+              : "border-border/60 bg-muted/30 text-muted-foreground"
+  }`}>
+    {text}
+  </span>
+);
+
+function DirectionBadge({ direction }: { direction: string | null }) {
+  const d = (direction ?? "").toUpperCase();
+  const isBuy = d === "BUY";
   return (
-    <span
-      className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-widest ${
-        isBuy
-          ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-          : "border-red-500/20 bg-red-500/10 text-red-600 dark:text-red-400"
-      }`}
-    >
-      {isBuy ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
-      {direction}
-    </span>
+    <Badge
+      text={d || "—"}
+      tone={isBuy ? "green" : d === "SELL" ? "red" : "gray"}
+    />
   );
 }
 
-function StatusBadge({ status }: { status: string }) {
+function StatusBadge({ status, type }: { status: string; type: SignalType }) {
   const s = (status || "").toUpperCase();
-  const cls =
-    s === "RECEIVED"
-      ? "border-blue-500/20 bg-blue-500/10 text-blue-600 dark:text-blue-400"
-      : "border-border/60 bg-muted/60 text-muted-foreground";
-  return (
-    <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-widest ${cls}`}>
-      {status || "unknown"}
-    </span>
-  );
+  if (type === "pending" || s === "PENDING" || s === "QUEUED") return <Badge text={s || "PENDING"} tone="amber" />;
+  if (s === "RECEIVED" || s === "STORED") return <Badge text={s} tone="blue" />;
+  if (s === "EXECUTED" || s === "OPEN" || s === "FILLED") return <Badge text={s} tone="green" />;
+  if (s === "REJECTED" || s === "FAILED" || s === "ERROR") return <Badge text={s} tone="red" />;
+  return <Badge text={s || "—"} tone="gray" />;
 }
 
-function fmtPrice(n?: number | null) {
-  if (n === null || n === undefined || Number.isNaN(n)) return "—";
-  return n.toLocaleString("en-US", { maximumFractionDigits: 2 });
-}
+const fmtPrice = (n?: number | null) =>
+  n == null ? "—" : n.toLocaleString("en-US", { maximumFractionDigits: 2 });
 
-function fmtTime(iso?: string | null) {
+const fmtTime = (iso?: string | null) => {
   if (!iso) return "—";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "—";
@@ -89,317 +112,327 @@ function fmtTime(iso?: string | null) {
     second: "2-digit",
     hour12: false,
   });
-}
+};
+
+const SELECT_CLS =
+  "h-10 rounded-lg border border-border/60 bg-card px-3 text-xs font-semibold outline-none transition-colors hover:border-violet-500/50 focus:border-violet-500/60 focus:ring-2 focus:ring-violet-500/20";
+
+/* ───────────────── Page ───────────────── */
+
+const TH = "px-4 py-3 text-left text-[11px] font-bold uppercase tracking-widest text-muted-foreground whitespace-nowrap";
+const TD = "px-4 py-3 align-middle text-sm";
 
 export default function AdminSignalsPage() {
-  const [signals, setSignals] = useState<Signal[]>([]);
-  const [total, setTotal] = useState<number | null>(null);
+  const [type, setType] = useState<SignalType>("signals");
+  const [rows, setRows] = useState<SignalRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  // Filters — only params the Python API supports: limit, symbol, direction, status
-  const [symbol, setSymbol] = useState("");
-  const [direction, setDirection] = useState("");
-  const [status, setStatus] = useState("");
-  const [limit, setLimit] = useState(50);
+  const [query, setQuery] = useState("");
+  const [dirFilter, setDirFilter] = useState<"all" | "BUY" | "SELL">("all");
+  const [page, setPage] = useState(1);
 
-  const fetchSignals = useCallback(async () => {
+  const load = useCallback(async () => {
     setLoading(true);
-    setError(null);
     try {
-      const params = new URLSearchParams();
-      params.set("limit", String(limit));
-      if (symbol.trim()) params.set("symbol", symbol.trim());
-      if (direction) params.set("direction", direction);
-      if (status.trim()) params.set("status", status.trim());
-
-      const response = await fetch(`/api/admin/signals?${params.toString()}`);
-      const data = await response.json();
-
-      if (!response.ok) {
-        setError(data.error || data.detail || "Failed to load signals");
-        setSignals([]);
-        return;
-      }
-      setSignals(data.signals || []);
-      setTotal(typeof data.total === "number" ? data.total : null);
-    } catch {
-      setError("Could not reach the bot service. Make sure the Python API is running.");
-      setSignals([]);
+      const res = await fetch(`/api/admin/signals?type=${type}&limit=1000`, { cache: "no-store" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Failed to load signals");
+      setRows(data.signals ?? []);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to load signals");
+      setRows([]);
     } finally {
       setLoading(false);
     }
-  }, [symbol, direction, status, limit]);
+  }, [type]);
 
   useEffect(() => {
-    // Deferred so the fetch (and its loading-state update) does not run
-    // synchronously inside the effect body
-    const timer = setTimeout(fetchSignals, 0);
-    return () => clearTimeout(timer);
-  }, [fetchSignals]);
+    const t = setTimeout(() => void load(), 0);
+    return () => clearTimeout(t);
+  }, [load]);
+
+  /* filtering + pagination */
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return rows.filter((s) => {
+      if (dirFilter !== "all" && (s.direction ?? "").toUpperCase() !== dirFilter) return false;
+      if (!q) return true;
+      return [s.symbol, s.group_name, s.raw_message, s.status]
+        .some((v) => v?.toLowerCase().includes(q));
+    });
+  }, [rows, query, dirFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const start = (safePage - 1) * PAGE_SIZE;
+  const pageRows = filtered.slice(start, start + PAGE_SIZE);
+
+  const switchType = (t: SignalType) => {
+    if (t === type) return;
+    setType(t);
+    setPage(1);
+    setExpandedId(null);
+    setQuery("");
+    setDirFilter("all");
+  };
 
   return (
-    <div className="min-h-screen bg-background text-foreground font-sans">
-      <main className="mx-auto w-full max-w-7xl py-5 lg:py-5">
-
-        {/* HEADER */}
-        <div className="mb-5 flex flex-col gap-4 border-b border-border/60 pb-2 md:flex-row md:items-end md:justify-between">
-          <div>
-            <p className="mb-1 text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">
-              Telegram Signal Monitoring
-            </p>
-            <h1 className="flex items-center gap-2.5 text-2xl font-mono font-black uppercase tracking-tight">
-              <Radio className="h-5 w-5 text-[#D4AF37]" />
-              Signals
-            </h1>
-          </div>
-          <div className="flex items-center gap-3">
-            {total !== null && (
-              <span className="rounded-full border border-border/60 bg-muted/60 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-                {total} stored
-              </span>
-            )}
-            <Button
-              variant="outline"
-              onClick={fetchSignals}
-              disabled={loading}
-              className="h-9 rounded-lg border-border/60 text-xs font-black uppercase tracking-widest"
-            >
-              {loading ? (
-                <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <RefreshCw className="mr-2 h-3.5 w-3.5" />
-              )}
-              Refresh
-            </Button>
-          </div>
+    <div className="mx-auto max-w-7xl space-y-6 py-4">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className={`${plexMono.className} text-[11px] tracking-[0.2em] text-violet-600 dark:text-violet-400`}>
+            [ // TRADE SIGNALS ]
+          </p>
+          <h1 className="mt-1 text-2xl font-extrabold uppercase tracking-tight">
+            Telegram <span className="bg-gradient-to-r from-violet-600 to-purple-600 bg-clip-text text-transparent dark:from-violet-400 dark:to-purple-400">Signals</span>
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {filtered.length} {type === "pending" ? "pending" : "stored"} signal{filtered.length === 1 ? "" : "s"} — click a row for details.
+          </p>
         </div>
+        <Button
+          variant="outline"
+          onClick={() => void load()}
+          className="h-9 gap-2 rounded-lg border-violet-500/40 text-xs font-semibold"
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh
+        </Button>
+      </div>
 
-        {/* FILTERS — mirrors the Python API query params exactly */}
-        <Card className="mb-5 overflow-hidden rounded-2xl border-border/60 shadow-sm">
-          <CardContent className="px-4 py-4 sm:px-6">
-            <div className="flex flex-wrap items-end gap-3">
-              <div className="min-w-40 flex-1">
-                <label className="mb-1.5 block text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-                  Symbol
-                </label>
-                <div className="relative">
-                  <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-                  <input
-                    type="text"
-                    placeholder="e.g. XAUUSDm"
-                    value={symbol}
-                    onChange={(e) => setSymbol(e.target.value)}
-                    className="h-9 w-full rounded-lg border border-border/60 bg-muted/60 pl-9 pr-3 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-[#D4AF37]"
-                  />
-                </div>
-              </div>
+      {/* type toggle */}
+      <div className="inline-flex rounded-xl border border-border/60 bg-muted/30 p-1">
+        {(["signals", "pending"] as const).map((t) => (
+          <button
+            key={t}
+            type="button"
+            onClick={() => switchType(t)}
+            className={`flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-bold uppercase tracking-wider transition-all ${
+              type === t
+                ? "bg-gradient-to-r from-violet-600 to-purple-600 text-white shadow-md shadow-violet-900/30"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {t === "signals" ? <Radio className="h-3.5 w-3.5" /> : <Inbox className="h-3.5 w-3.5" />}
+            {t === "signals" ? "Signals" : "Pending Signals"}
+          </button>
+        ))}
+      </div>
 
-              <div className="w-36">
-                <label className="mb-1.5 block text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-                  Direction
-                </label>
-                <select
-                  value={direction}
-                  onChange={(e) => setDirection(e.target.value)}
-                  className="h-9 w-full rounded-lg border border-border/60 bg-muted/60 px-3 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-[#D4AF37]"
-                >
-                  <option value="">All</option>
-                  <option value="BUY">BUY</option>
-                  <option value="SELL">SELL</option>
-                </select>
-              </div>
+      {/* toolbar */}
+      <div className="flex w-full flex-wrap items-center gap-2">
+        <div className="relative min-w-[220px] flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <input
+            value={query}
+            onChange={(e) => { setQuery(e.target.value); setPage(1); }}
+            placeholder="Search symbol, group or message"
+            className="h-10 w-full rounded-lg border border-border/60 bg-card pl-9 pr-3 text-xs font-medium outline-none transition-colors placeholder:text-muted-foreground/70 hover:border-violet-500/50 focus:border-violet-500/60 focus:ring-2 focus:ring-violet-500/20"
+          />
+        </div>
+        <select
+          value={dirFilter}
+          onChange={(e) => { setDirFilter(e.target.value as typeof dirFilter); setPage(1); }}
+          className={`${SELECT_CLS} flex-1 sm:flex-none`}
+          aria-label="Filter by direction"
+        >
+          <option value="all">All directions</option>
+          <option value="BUY">Buy</option>
+          <option value="SELL">Sell</option>
+        </select>
+      </div>
 
-              <div className="min-w-32 flex-1">
-                <label className="mb-1.5 block text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-                  Status
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. RECEIVED"
-                  value={status}
-                  onChange={(e) => setStatus(e.target.value)}
-                  className="h-9 w-full rounded-lg border border-border/60 bg-muted/60 px-3 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-[#D4AF37]"
-                />
-              </div>
-
-              <div className="w-28">
-                <label className="mb-1.5 block text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-                  Limit
-                </label>
-                <select
-                  value={limit}
-                  onChange={(e) => setLimit(Number(e.target.value))}
-                  className="h-9 w-full rounded-lg border border-border/60 bg-muted/60 px-3 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-[#D4AF37]"
-                >
-                  {LIMIT_OPTIONS.map((n) => (
-                    <option key={n} value={n}>{n}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
+      {loading ? (
+        <div className="flex items-center justify-center gap-2 rounded-2xl border border-border/60 bg-muted/20 py-16 text-muted-foreground">
+          <Loader2 className="h-5 w-5 animate-spin" /> Loading signals…
+        </div>
+      ) : rows.length === 0 ? (
+        <Card className="border-violet-500/20">
+          <CardContent className="flex flex-col items-center gap-3 py-16 text-center">
+            <span className="flex h-14 w-14 items-center justify-center rounded-2xl border border-violet-500/20 bg-violet-500/10 text-violet-500">
+              <Radio className="h-7 w-7" />
+            </span>
+            <p className="text-sm font-extrabold text-muted-foreground">
+              {type === "pending" ? "No pending signals" : "No signals stored"}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {type === "pending"
+                ? "Signals that failed backend delivery will queue here for retry."
+                : "Validated signals from Telegram groups will appear here."}
+            </p>
           </CardContent>
         </Card>
-
-        {/* SIGNALS TABLE */}
-        <Card className="overflow-hidden rounded-2xl border-border/60 shadow-sm">
-          <CardContent className="px-0 py-0">
-            {loading ? (
-              <div className="flex flex-col items-center justify-center gap-2 py-16 text-center">
-                <Loader2 className="h-10 w-10 animate-spin text-muted-foreground" />
-                <p className="text-sm font-bold text-muted-foreground">Loading signals...</p>
-              </div>
-            ) : error ? (
-              <div className="flex flex-col items-center justify-center gap-2 py-16 text-center">
-                <AlertCircle className="h-10 w-10 text-red-500" />
-                <p className="text-sm font-bold text-muted-foreground">{error}</p>
-                <Button
-                  variant="outline"
-                  onClick={fetchSignals}
-                  className="mt-2 h-8 rounded-lg border-border/60 text-xs font-black uppercase tracking-widest"
-                >
-                  Retry
-                </Button>
-              </div>
-            ) : signals.length === 0 ? (
-              <div className="flex flex-col items-center justify-center gap-2 py-16 text-center">
-                <Radio className="h-10 w-10 text-muted-foreground" />
-                <p className="text-sm font-bold text-muted-foreground">No signals found</p>
-                <p className="text-[10px] text-muted-foreground">
-                  Validated signals from authorized Telegram groups will appear here
-                </p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left">
-                  <thead className="border-b border-border/60 bg-muted/40 text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-                    <tr>
-                      <th className="px-4 py-3">Symbol</th>
-                      <th className="px-4 py-3">Direction</th>
-                      <th className="px-4 py-3">Order</th>
-                      <th className="px-4 py-3 text-right">Entry</th>
-                      <th className="px-4 py-3 text-right">Stop Loss</th>
-                      <th className="px-4 py-3 text-right">TPs</th>
-                      <th className="px-4 py-3">Source</th>
-                      <th className="px-4 py-3">Time</th>
-                      <th className="px-4 py-3">Status</th>
-                      <th className="px-4 py-3"></th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border/60">
-                    {signals.map((signal) => {
-                      const expanded = expandedId === signal._id;
-                      return (
-                        <Fragment key={signal._id}>
-                          <tr
-                            onClick={() => setExpandedId(expanded ? null : signal._id)}
-                            className="cursor-pointer transition-colors hover:bg-muted/40"
-                          >
-                            <td className="px-4 py-3">
-                              <span className="font-mono text-sm font-bold">{signal.symbol}</span>
-                            </td>
-                            <td className="px-4 py-3">
-                              <DirectionBadge direction={signal.direction} />
-                            </td>
-                            <td className="px-4 py-3">
-                              <span className="text-xs font-mono text-muted-foreground">
-                                {signal.order_type || "—"}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3 text-right">
-                              <span className="font-mono text-sm">{fmtPrice(signal.entry)}</span>
-                              {(signal.entry_high != null || signal.entry_low != null) && (
-                                <span className="block text-[9px] font-mono text-muted-foreground">
-                                  {fmtPrice(signal.entry_low)} – {fmtPrice(signal.entry_high)}
-                                </span>
-                              )}
-                            </td>
-                            <td className="px-4 py-3 text-right">
-                              <span className="font-mono text-sm text-red-500">{fmtPrice(signal.stop_loss)}</span>
-                            </td>
-                            <td className="px-4 py-3 text-right">
-                              <span className="font-mono text-sm">{signal.take_profits?.length ?? 0}</span>
-                            </td>
-                            <td className="px-4 py-3">
-                              <span className="block max-w-40 truncate text-xs font-semibold">
-                                {signal.group_name || "Unknown"}
-                              </span>
-                              <span className="block text-[9px] font-mono text-muted-foreground">
-                                chat {signal.chat_id}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3">
-                              <span className="flex items-center gap-1 text-[10px] font-mono text-muted-foreground">
-                                <Clock className="h-3 w-3" />
-                                {fmtTime(signal.timestamp || signal.ingested_at)}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3">
-                              <StatusBadge status={signal.status} />
-                            </td>
-                            <td className="px-4 py-3">
-                              {expanded ? (
-                                <ChevronUp className="h-4 w-4 text-muted-foreground" />
-                              ) : (
-                                <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                              )}
-                            </td>
-                          </tr>
-                          {expanded && (
-                            <tr className="bg-muted/20">
-                              <td colSpan={10} className="px-4 py-4">
-                                <div className="grid gap-4 md:grid-cols-2">
-                                  <div className="space-y-2">
-                                    <div className="flex flex-wrap gap-x-6 gap-y-1.5 text-xs">
-                                      <span className="flex items-center gap-1.5 text-muted-foreground">
-                                        <Hash className="h-3 w-3" /> msg {signal.message_id}
+      ) : (
+        <Card className="gap-0 overflow-hidden border-violet-500/20 p-0 shadow-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full" style={{ minWidth: 1080 }}>
+              <thead>
+                <tr className="border-b border-border/50 bg-muted/20">
+                  <th className={TH}>Symbol</th>
+                  <th className={TH}>Direction</th>
+                  <th className={TH}>Order</th>
+                  <th className={`${TH} text-right`}>Entry</th>
+                  <th className={`${TH} text-right`}>Stop Loss</th>
+                  <th className={`${TH} text-right`}>TPs</th>
+                  <th className={TH}>Source</th>
+                  <th className={TH}>Time</th>
+                  <th className={TH}>Status</th>
+                  <th className={TH}></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/40">
+                {pageRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={10} className="px-4 py-12 text-center text-xs text-muted-foreground">
+                      No signals match your filters.
+                    </td>
+                  </tr>
+                ) : pageRows.map((s) => {
+                  const expanded = expandedId === s.id;
+                  const time = type === "pending"
+                    ? (s.queued_at ?? s.timestamp ?? s.ingested_at)
+                    : (s.timestamp ?? s.ingested_at);
+                  return (
+                    <Fragment key={s.id}>
+                      <tr
+                        onClick={() => setExpandedId(expanded ? null : s.id)}
+                        className="cursor-pointer transition-colors hover:bg-muted/30"
+                      >
+                        <td className={TD}>
+                          <span className={`${plexMono.className} text-sm font-bold`}>{s.symbol ?? "—"}</span>
+                        </td>
+                        <td className={TD}><DirectionBadge direction={s.direction} /></td>
+                        <td className={TD}>
+                          <span className={`${plexMono.className} text-xs text-muted-foreground`}>
+                            {s.order_type ?? "—"}
+                          </span>
+                        </td>
+                        <td className={`${TD} text-right`}>
+                          <span className={`${plexMono.className} text-sm font-semibold`}>{fmtPrice(s.entry)}</span>
+                          {(s.entry_high != null || s.entry_low != null) && (
+                            <span className={`${plexMono.className} block text-[10px] text-muted-foreground`}>
+                              {fmtPrice(s.entry_low)} – {fmtPrice(s.entry_high)}
+                            </span>
+                          )}
+                        </td>
+                        <td className={`${TD} text-right`}>
+                          <span className={`${plexMono.className} text-sm font-semibold text-rose-600 dark:text-rose-400`}>
+                            {fmtPrice(s.stop_loss)}
+                          </span>
+                        </td>
+                        <td className={`${TD} text-right`}>
+                          <span className={`${plexMono.className} text-sm font-semibold`}>
+                            {s.take_profits?.length ?? 0}
+                          </span>
+                        </td>
+                        <td className={TD}>
+                          <p className="max-w-[180px] truncate text-xs font-semibold">
+                            {s.group_name || "Unknown"}
+                          </p>
+                          <p className={`${plexMono.className} text-[10px] text-muted-foreground`}>
+                            chat {s.chat_id ?? "—"}
+                          </p>
+                        </td>
+                        <td className={`${TD} whitespace-nowrap text-muted-foreground`}>{fmtTime(time)}</td>
+                        <td className={TD}>
+                          <StatusBadge status={s.status} type={type} />
+                          {type === "pending" && s.attempts != null && s.attempts > 0 && (
+                            <p className="mt-1 text-[10px] font-semibold text-amber-600 dark:text-amber-400">
+                              {s.attempts} attempt{s.attempts === 1 ? "" : "s"}
+                            </p>
+                          )}
+                        </td>
+                        <td className={TD}>
+                          {expanded
+                            ? <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                            : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+                        </td>
+                      </tr>
+                      {expanded && (
+                        <tr className="bg-muted/20">
+                          <td colSpan={10} className="px-4 py-4">
+                            <div className="grid gap-4 md:grid-cols-2">
+                              <div className="space-y-2">
+                                <div className="flex flex-wrap gap-x-6 gap-y-1.5 text-xs text-muted-foreground">
+                                  <span className="flex items-center gap-1.5">
+                                    <Hash className="h-3 w-3" /> msg {s.message_id ?? "—"}
+                                  </span>
+                                  <span className="flex items-center gap-1.5">
+                                    <Target className="h-3 w-3" /> confidence {s.confidence ?? "—"}
+                                  </span>
+                                  <span className="flex items-center gap-1.5">
+                                    <ShieldAlert className="h-3 w-3" /> status {s.status}
+                                  </span>
+                                  <span className="flex items-center gap-1.5">
+                                    <Clock className="h-3 w-3" /> {fmtTime(time)}
+                                  </span>
+                                </div>
+                                <div>
+                                  <p className={`${plexMono.className} mb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground`}>
+                                    Take Profits
+                                  </p>
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {(s.take_profits || []).length === 0 ? (
+                                      <span className="text-xs text-muted-foreground">—</span>
+                                    ) : s.take_profits.map((tp, i) => (
+                                      <span
+                                        key={i}
+                                        className="rounded-md border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 font-mono text-[11px] text-emerald-600 dark:text-emerald-400"
+                                      >
+                                        TP{i + 1}: {fmtPrice(tp)}
                                       </span>
-                                      <span className="flex items-center gap-1.5 text-muted-foreground">
-                                        <Target className="h-3 w-3" /> confidence {signal.confidence ?? "—"}
-                                      </span>
-                                      <span className="flex items-center gap-1.5 text-muted-foreground">
-                                        <ShieldAlert className="h-3 w-3" /> status {signal.status}
-                                      </span>
-                                    </div>
-                                    <div>
-                                      <p className="mb-1 text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-                                        Take Profits
-                                      </p>
-                                      <div className="flex flex-wrap gap-1.5">
-                                        {(signal.take_profits || []).map((tp, i) => (
-                                          <span
-                                            key={i}
-                                            className="rounded-md border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 font-mono text-[11px] text-emerald-600 dark:text-emerald-400"
-                                          >
-                                            TP{i + 1}: {fmtPrice(tp)}
-                                          </span>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  </div>
-                                  <div>
-                                    <p className="mb-1 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-                                      <MessageSquare className="h-3 w-3" /> Raw Message
-                                    </p>
-                                    <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded-lg border border-border/60 bg-muted/40 p-3 font-mono text-[11px] leading-relaxed text-foreground">
-                                      {signal.raw_message || "—"}
-                                    </pre>
+                                    ))}
                                   </div>
                                 </div>
-                              </td>
-                            </tr>
-                          )}
-                        </Fragment>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </CardContent>
+                              </div>
+                              <div>
+                                <p className={`${plexMono.className} mb-1 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground`}>
+                                  <MessageSquare className="h-3 w-3" /> Raw Message
+                                </p>
+                                <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded-lg border border-border/60 bg-muted/40 p-3 font-mono text-[11px] leading-relaxed text-foreground">
+                                  {s.raw_message || "—"}
+                                </pre>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* footer / pagination */}
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/50 px-4 py-3 text-xs text-muted-foreground">
+            <span>
+              {filtered.length === 0 ? "0 results" : `${start + 1} to ${Math.min(start + PAGE_SIZE, filtered.length)} of ${filtered.length}`}
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={safePage <= 1}
+                onClick={() => setPage(safePage - 1)}
+                aria-label="Previous page"
+                className="flex h-8 w-8 items-center justify-center rounded-lg border border-border/60 transition-colors hover:bg-violet-500/10 disabled:opacity-40 disabled:hover:bg-transparent"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <span className="min-w-[88px] text-center font-semibold">Page {safePage} of {totalPages}</span>
+              <button
+                type="button"
+                disabled={safePage >= totalPages}
+                onClick={() => setPage(safePage + 1)}
+                aria-label="Next page"
+                className="flex h-8 w-8 items-center justify-center rounded-lg border border-border/60 transition-colors hover:bg-violet-500/10 disabled:opacity-40 disabled:hover:bg-transparent"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
         </Card>
-      </main>
+      )}
     </div>
   );
 }

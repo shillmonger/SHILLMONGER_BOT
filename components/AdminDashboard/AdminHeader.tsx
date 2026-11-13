@@ -88,8 +88,11 @@ export default function UserHeader({
   const defaultProfileImage = "https://github.com/shadcn.png";
 
   return (
-    <header className="h-15 lg:h-15 border-b border-border flex items-center justify-between gap-4 px-4 sm:px-10 bg-background/80 backdrop-blur-md sticky top-0 z-50">
-      <div className="flex items-center gap-3 flex-shrink-0">
+    <header className="relative h-15 lg:h-15 overflow-hidden border-b border-border flex items-center justify-between gap-4 px-4 sm:px-10 bg-background/80 backdrop-blur-md sticky top-0 z-50">
+      {/* soft purple glow — matches UserSidebar */}
+      <div className="pointer-events-none absolute -top-16 -left-16 h-48 w-48 rounded-full bg-violet-600/15 blur-[80px]" />
+      <div className="pointer-events-none absolute -bottom-16 -right-16 h-48 w-48 rounded-full bg-purple-600/10 blur-[80px]" />
+      <div className="relative flex items-center gap-3 flex-shrink-0">
         <button
           className="lg:hidden p-2 rounded-xl hover:bg-secondary transition-colors"
           onClick={onLeftClick}
@@ -104,7 +107,7 @@ export default function UserHeader({
         </div>
       </div>
 
-      <div className="flex items-center gap-2 sm:gap-2">
+      <div className="relative flex items-center gap-2 sm:gap-2">
         {/* Theme toggle */}
         <button
           onClick={() => setTheme(theme === "dark" ? "light" : "dark")}

@@ -2,15 +2,16 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { IBM_Plex_Mono } from "next/font/google";
 import {
-  LayoutDashboard,
   Send,
-  Signal,
   DatabaseZap,
   ChartColumn,
   UsersRound,
+  Layers,
   Settings,
   Lock,
   LogOut,
@@ -21,14 +22,17 @@ import {
   UserRoundKey,
   PieChart,
   MailSearch,
-  Brain,
-  Tags,
   CircleGauge,
   Scale,
   TriangleAlert,
-  History,
   X,
 } from "lucide-react";
+
+const plexMono = IBM_Plex_Mono({
+  weight: ["400", "500", "600"],
+  subsets: ["latin"],
+  display: "swap",
+});
 
 interface SidebarProps {
   sidebarOpen: boolean;
@@ -43,6 +47,11 @@ type NavItem =
       children: { name: string; icon: React.ElementType; href: string }[];
     };
 
+const ACTIVE_CLS =
+  "bg-gradient-to-r from-violet-600 to-purple-600 text-white shadow-lg shadow-violet-900/30";
+const IDLE_CLS =
+  "text-muted-foreground hover:bg-violet-500/10 hover:text-foreground";
+
 export default function AdminSidebar({
   sidebarOpen,
   setSidebarOpen,
@@ -53,11 +62,10 @@ export default function AdminSidebar({
   const [countdown, setCountdown] = useState(10);
 
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
-    "Bot Settings": true,
-    "TG Responses": false,
+    "Bot Settings": false,
+    "Audit logs": true,
   });
 
-  
   const basePath = "/AdminDashboard";
 
   useEffect(() => {
@@ -67,8 +75,12 @@ export default function AdminSidebar({
         setCountdown(countdown - 1);
       }, 1000);
     } else if (countdown === 0) {
-      setShowLogoutConfirm(false);
-      setCountdown(10);
+      // Deferred so setState doesn't run synchronously inside the effect.
+      const t = setTimeout(() => {
+        setShowLogoutConfirm(false);
+        setCountdown(10);
+      }, 0);
+      return () => clearTimeout(t);
     }
     return () => clearTimeout(timer);
   }, [showLogoutConfirm, countdown]);
@@ -82,21 +94,21 @@ export default function AdminSidebar({
       name: "Bot Settings",
       icon: Settings,
       children: [
-        { name: "Position Limits", icon: CircleGauge, href: `${basePath}/position-limits` },
-        { name: "Lot size Config", icon: Scale, href: `${basePath}/lot-size` },
-        { name: "Stop lose Config", icon: TriangleAlert, href: `${basePath}/stop-loss` },
+        { name: "Position Limits", icon: CircleGauge, href: `${basePath}/BotSettings/position-limits` },
+        { name: "Lot size Config", icon: Scale, href: `${basePath}/BotSettings/lot-size` },
+        { name: "Stop lose Config", icon: TriangleAlert, href: `${basePath}/BotSettings/stop-loss` },
       ],
     },
     { name: "Trade Signals", icon: ChartColumn, href: `${basePath}/signals` },
-    { name: "Bot Analytics", icon: PieChart, href: `${basePath}/my-investments` },
+    { name: "Trade History", icon: Layers, href: `${basePath}/trade-history` },
+    { name: "Total Analytics", icon: PieChart, href: `${basePath}/analytics` },
     {
       name: "Audit logs",
       icon: KeyRound,
       children: [
-        { name: "TG Messages", icon: MailSearch, href: `${basePath}/` },
+        { name: "Processed Logs", icon: MailSearch, href: `${basePath}/AuditLogs/processed-logs` },
       ],
     },
-    { name: "Role Settings", icon: UserRoundKey, href: `${basePath}/role-settings` },
     { name: "User Management", icon: UsersRound, href: `${basePath}/user-management` },
     { name: "Switch back 2 User", icon: Lock, href: `/UserDashboard/dashboard` },
   ];
@@ -118,130 +130,144 @@ export default function AdminSidebar({
     setOpenGroups((prev) => ({ ...prev, [name]: !prev[name] }));
   };
 
+  /* ───────── Shared pieces ───────── */
+
+  const brand = () => (
+    <div className="relative flex-shrink-0 flex items-center justify-start h-15 px-5 border-b border-border">
+          <Link href="/AdminDashboard/dashboard" className="flex flex-col gap-1">
+            <Image
+              src="/logo.png"
+              alt="Shillmonger"
+              width={160}
+              height={40}
+              priority
+              className="h-14 w-auto self-start"
+            />
+          </Link>
+        </div>
+  );
+
+  const renderNav = (onNavigate?: () => void) => (
+    <nav className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-1 scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent">
+      <p
+        className={`${plexMono.className} px-2 pb-2 text-[9px] tracking-[0.2em] text-muted-foreground/70 uppercase`}
+      >
+        [ // Menu ]
+      </p>
+
+      {navItems.map((item) => {
+        if ("href" in item) {
+          const active = pathname === item.href;
+          return (
+            <Link
+              key={item.name}
+              href={item.href}
+              onClick={onNavigate}
+              className={`group relative flex items-center px-4 py-2.5 rounded-lg transition-all duration-200 ${active ? ACTIVE_CLS : IDLE_CLS
+                }`}
+            >
+              <item.icon
+                className={`w-5 h-5 mr-4 transition-transform ${active ? "scale-110" : "group-hover:scale-110"
+                  }`}
+              />
+              <span className="text-[12px] font-extrabold uppercase tracking-widest">
+                {item.name}
+              </span>
+              {active && (
+                <span className="ml-auto h-1.5 w-1.5 rounded-full bg-white/90" />
+              )}
+            </Link>
+          );
+        }
+
+        const isOpen = !!openGroups[item.name];
+        const hasActiveChild = item.children?.some(
+          (c) => pathname === c.href,
+        ) || false;
+
+        return (
+          <div key={item.name} className="flex flex-col">
+            <button
+              onClick={() => toggleGroup(item.name)}
+              className={`group w-full flex items-center px-4 py-2.5 rounded-lg transition-all duration-200 cursor-pointer ${hasActiveChild
+                  ? "text-violet-600 dark:text-violet-400"
+                  : IDLE_CLS
+                }`}
+            >
+              <item.icon
+                className={`w-5 h-5 mr-4 transition-transform ${hasActiveChild ? "scale-110" : "group-hover:scale-110"
+                  }`}
+              />
+              <span className="flex-1 text-left text-[12px] font-extrabold uppercase tracking-widest">
+                {item.name}
+              </span>
+              <ChevronDown
+                className={`w-4 h-4 transition-transform duration-300 ${isOpen ? "rotate-180" : ""
+                  }`}
+              />
+            </button>
+
+            <div
+              className={`${isOpen ? "block" : "hidden"} transition-all duration-300 ease-in-out`}
+            >
+              <div className="ml-6 mt-1 mb-1 pl-4 border-l border-violet-500/30 space-y-0.5">
+                {item.children?.map((child) => {
+                  const childActive = pathname === child.href;
+                  return (
+                    <Link
+                      key={child.name}
+                      href={child.href}
+                      onClick={onNavigate}
+                      className={`group flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 ${childActive ? ACTIVE_CLS : IDLE_CLS
+                        }`}
+                    >
+                      <child.icon
+                        className={`w-4 h-4 flex-shrink-0 transition-transform ${childActive ? "scale-110" : "group-hover:scale-110"
+                          }`}
+                      />
+                      <span className="text-[11px] font-extrabold uppercase tracking-widest">
+                        {child.name}
+                      </span>
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </nav>
+  );
+
+  const renderLogout = (onBefore?: () => void) => (
+    <div className="flex-shrink-0 border-t border-border px-4 py-3">
+      <button
+        onClick={() => {
+          onBefore?.();
+          setShowLogoutConfirm(true);
+        }}
+        className="flex items-center cursor-pointer w-full px-4 py-3 text-red-500 hover:bg-red-500/10 transition-all rounded-lg group"
+      >
+        <LogOut className="w-5 h-5 mr-3 group-hover:-translate-x-1 transition-transform" />
+        <span className="text-xs font-extrabold uppercase tracking-widest">
+          Logout My Account
+        </span>
+      </button>
+    </div>
+  );
+
   return (
     <>
       {/* Desktop Sidebar */}
-      <aside className="hidden md:flex w-65 border-r h-screen bg-background flex-col shadow-xl">
-        {/* Header */}
-        <div className="flex-shrink-0 flex items-center justify-between h-15 px-6 border-b border-border">
-          <div className="flex flex-col">
-            <h1 className="text-xl font-black uppercase tracking-tighter text-foreground">
-              SHILL <span className="text-[#D4AF37]">MONGER</span>
-            </h1>
-            <p className="text-[8px] font-bold tracking-[0.2em] text-muted-foreground uppercase">
-              Admin Control Panel
-            </p>
-          </div>
-        </div>
+      <aside className="relative hidden md:flex w-65 border-r h-screen bg-background flex-col shadow-xl overflow-hidden">
+        {/* soft purple glow */}
+        <div className="pointer-events-none absolute -top-24 -left-24 h-56 w-56 rounded-full bg-violet-600/15 blur-[90px]" />
+        <div className="pointer-events-none absolute bottom-10 -right-24 h-56 w-56 rounded-full bg-purple-600/10 blur-[90px]" />
 
-        {/* Nav */}
-        <nav className="flex-1 min-h-0 overflow-y-auto px-4 py-3 space-y-0 scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent">
-          {navItems.map((item) => {
-            if ("href" in item) {
-              const active = pathname === item.href;
-              return (
-                <Link
-                  key={item.name}
-                  href={item.href}
-                  className={`group flex items-center px-4 py-2.5 rounded-lg transition-all duration-200 ${
-                    active
-                      ? "bg-[#D4AF37] text-black shadow-lg shadow-[#D4AF37]/30"
-                      : "text-muted-foreground hover:bg-secondary hover:text-foreground"
-                  }`}
-                >
-                  <item.icon
-                    className={`w-5 h-5 mr-3 transition-transform ${
-                      active ? "scale-110" : "group-hover:scale-110"
-                    }`}
-                  />
-                  <span className="text-[12px] font-black uppercase tracking-widest">
-                    {item.name}
-                  </span>
-                </Link>
-              );
-            }
-
-            const isOpen = !!openGroups[item.name];
-            const hasActiveChild = item.children?.some(
-              (c) => pathname === c.href,
-            ) || false;
-
-            return (
-              <div key={item.name} className="flex flex-col">
-                <button
-                  onClick={() => toggleGroup(item.name)}
-                  className={`group w-full flex items-center px-4 py-2.5 rounded-sm transition-all duration-200 cursor-pointer ${
-                    hasActiveChild
-                      ? "text-[#D4AF37]"
-                      : "text-muted-foreground hover:bg-secondary hover:text-foreground"
-                  }`}
-                >
-                  <item.icon
-                    className={`w-5 h-5 mr-5 transition-transform ${
-                      hasActiveChild ? "scale-110" : "group-hover:scale-110"
-                    }`}
-                  />
-                  <span className="flex-1 text-left text-[12px] font-black uppercase tracking-widest">
-                    {item.name}
-                  </span>
-                  {item.children && (
-                    <ChevronDown
-                      className={`w-4 h-4 transition-transform duration-300 ${
-                        isOpen ? "rotate-180" : ""
-                      }`}
-                    />
-                  )}
-                </button>
-
-                {item.children && (
-                  <div
-                    className={`${isOpen ? "block" : "hidden"} transition-all duration-300 ease-in-out`}
-                  >
-                    <div className="ml-4 mt-1 mb-1 pl-4 border-l border-border space-y-0.5">
-                      {item.children.map((child) => {
-                        const childActive = pathname === child.href;
-                        return (
-                          <Link
-                            key={child.name}
-                            href={child.href}
-                            className={`group flex items-center gap-3 px-3 py-2 rounded-sm transition-all duration-200 ${
-                              childActive
-                                ? "bg-[#D4AF37] text-black shadow-lg shadow-[#D4AF37]/30"
-                                : "text-muted-foreground hover:bg-secondary hover:text-foreground"
-                            }`}
-                          >
-                            <child.icon
-                              className={`w-4 h-4 flex-shrink-0 transition-transform ${
-                                childActive
-                                  ? "scale-110"
-                                  : "group-hover:scale-110"
-                              }`}
-                            />
-                            <span className="text-[11px] font-black uppercase tracking-widest">
-                              {child.name}
-                            </span>
-                          </Link>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </nav>
-
-        {/* Logout */}
-        <div className="flex-shrink-0 border-t border-border px-4 py-2">
-          <button
-            onClick={() => setShowLogoutConfirm(true)}
-            className="flex items-center cursor-pointer w-full px-4 py-3 text-red-500 hover:bg-red-500/10 transition-all rounded-sm group"
-          >
-            <LogOut className="w-5 h-5 mr-3 group-hover:-translate-x-1 transition-transform" />
-            <span className="text-xs font-black uppercase tracking-widest">
-              Logout My Account
-            </span>
-          </button>
+        <div className="relative flex h-full flex-col">
+          {brand()}
+          {renderNav()}
+          {renderLogout()}
         </div>
       </aside>
 
@@ -252,140 +278,36 @@ export default function AdminSidebar({
             className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm lg:hidden transition-opacity"
             onClick={() => setSidebarOpen(false)}
           />
-          <aside
-            className="fixed top-0 left-0 w-full h-full bg-background z-[100] flex flex-col shadow-2xl lg:hidden"
-          >
-            {/* Mobile Header */}
-            <div className="flex-shrink-0 flex items-center justify-between h-15 px-6 border-b border-border">
-              <div className="flex flex-col">
-                <h1 className="text-xl font-black uppercase tracking-tighter text-foreground">
-                  SHILL<span className="text-[#D4AF37]">MONGER</span>
-                </h1>
-                <p className="text-[8px] font-bold tracking-[0.2em] text-muted-foreground uppercase">
-                  Admin Control Panel
-                </p>
+          <aside className="fixed top-0 left-0 w-full h-full bg-background z-[100] flex flex-col shadow-2xl lg:hidden overflow-hidden">
+            <div className="pointer-events-none absolute -top-24 -left-24 h-56 w-56 rounded-full bg-violet-600/15 blur-[90px]" />
+
+            <div className="relative flex h-full flex-col">
+              <div className="flex-shrink-0 flex items-center justify-between h-16 px-5 border-b border-border">
+                <Link
+                  href="/AdminDashboard/dashboard"
+                  className="flex flex-col gap-1"
+                  onClick={() => setSidebarOpen(false)}
+                >
+                  <Image
+                    src="/logo.png"
+                    alt="Shillmonger"
+                    width={160}
+                    height={40}
+                    priority
+                    className="h-12 w-auto self-start"
+                  />
+                </Link>
+                <button
+                  className="rounded-lg text-foreground"
+                  onClick={() => setSidebarOpen(false)}
+                  aria-label="Close menu"
+                >
+                  <X className="w-5 h-5" />
+                </button>
               </div>
-              <button
-                className="rounded-lg text-foreground"
-                onClick={() => setSidebarOpen(false)}
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
 
-            {/* Mobile Nav */}
-            <nav className="flex-1 min-h-0 overflow-y-auto px-4 py-5 space-y-1 scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent">
-              {navItems.map((item) => {
-                if ("href" in item) {
-                  const active = pathname === item.href;
-                  return (
-                    <Link
-                      key={item.name}
-                      href={item.href}
-                      className={`group flex items-center px-4 py-2.5 rounded-sm transition-all duration-200 ${
-                        active
-                          ? "bg-[#D4AF37] text-black shadow-lg shadow-[#D4AF37]/30"
-                          : "text-muted-foreground hover:bg-secondary hover:text-foreground"
-                      }`}
-                      onClick={() => setSidebarOpen(false)}
-                    >
-                      <item.icon
-                        className={`w-5 h-5 mr-5 transition-transform ${
-                          active ? "scale-110" : "group-hover:scale-110"
-                        }`}
-                      />
-                      <span className="text-[12px] font-black uppercase tracking-widest">
-                        {item.name}
-                      </span>
-                    </Link>
-                  );
-                }
-
-                const isOpen = !!openGroups[item.name];
-                const hasActiveChild = item.children?.some(
-                  (c) => pathname === c.href,
-                ) || false;
-
-                return (
-                  <div key={item.name} className="flex flex-col">
-                    <button
-                      onClick={() => toggleGroup(item.name)}
-                      className={`group w-full flex items-center px-4 py-2.5 rounded-sm transition-all duration-200 cursor-pointer ${
-                        hasActiveChild
-                          ? "text-[#D4AF37]"
-                          : "text-muted-foreground hover:bg-secondary hover:text-foreground"
-                      }`}
-                    >
-                      <item.icon
-                        className={`w-5 h-5 mr-5 transition-transform ${
-                          hasActiveChild ? "scale-110" : "group-hover:scale-110"
-                        }`}
-                      />
-                      <span className="flex-1 text-left text-[12px] font-black uppercase tracking-widest">
-                        {item.name}
-                      </span>
-                      {item.children && (
-                        <ChevronDown
-                          className={`w-4 h-4 transition-transform duration-300 ${
-                            isOpen ? "rotate-180" : ""
-                          }`}
-                        />
-                      )}
-                    </button>
-
-                    {item.children && (
-                      <div
-                        className={`${isOpen ? "block" : "hidden"} transition-all duration-300 ease-in-out`}
-                      >
-                        <div className="ml-4 mt-1 mb-1 pl-4 border-l border-border space-y-0.5">
-                          {item.children.map((child) => {
-                            const childActive = pathname === child.href;
-                            return (
-                              <Link
-                                key={child.name}
-                                href={child.href}
-                                className={`group flex items-center gap-3 px-3 py-2 rounded-sm transition-all duration-200 ${
-                                  childActive
-                                    ? "bg-[#D4AF37] text-black shadow-lg shadow-[#D4AF37]/30"
-                                    : "text-muted-foreground hover:bg-secondary hover:text-foreground"
-                                }`}
-                                onClick={() => setSidebarOpen(false)}
-                              >
-                                <child.icon
-                                  className={`w-4 h-4 flex-shrink-0 transition-transform ${
-                                    childActive
-                                      ? "scale-110"
-                                      : "group-hover:scale-110"
-                                  }`}
-                                />
-                                <span className="text-[11px] font-black uppercase tracking-widest">
-                                  {child.name}
-                                </span>
-                              </Link>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </nav>
-
-            {/* Mobile Logout */}
-            <div className="flex-shrink-0 border-t border-border px-4 py-2">
-              <button
-                onClick={() => {
-                  setSidebarOpen(false);
-                  setShowLogoutConfirm(true);
-                }}
-                className="flex items-center cursor-pointer w-full px-4 py-3 text-red-500 hover:bg-red-500/10 transition-all rounded-sm group"
-              >
-                <LogOut className="w-5 h-5 mr-3 group-hover:-translate-x-1 transition-transform" />
-                <span className="text-xs font-black uppercase tracking-widest">
-                  Logout My Account
-                </span>
-              </button>
+              {renderNav(() => setSidebarOpen(false))}
+              {renderLogout(() => setSidebarOpen(false))}
             </div>
           </aside>
         </>
@@ -405,7 +327,7 @@ export default function AdminSidebar({
               Logout?
             </h2>
             <p className="text-sm text-muted-foreground mb-4">
-              Are you sure you want to sign out? You'll need to log in again to
+              Are you sure you want to sign out? You&rsquo;ll need to log in again to
               access your account.
             </p>
 
@@ -417,7 +339,7 @@ export default function AdminSidebar({
               </div>
               <div className="w-full bg-secondary rounded-full h-2">
                 <div
-                  className="bg-foreground h-2 rounded-full transition-all duration-1000 ease-linear"
+                  className="bg-gradient-to-r from-violet-600 to-purple-600 h-2 rounded-full transition-all duration-1000 ease-linear"
                   style={{ width: `${(countdown / 10) * 100}%` }}
                 />
               </div>

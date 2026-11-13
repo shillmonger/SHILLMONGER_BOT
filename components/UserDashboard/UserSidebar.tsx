@@ -118,8 +118,7 @@ export default function UserSidebar({
   const navItems: NavItem[] = [
     { name: "Dashboard", icon: LayoutDashboard, href: `${basePath}/dashboard` },
     { name: "Subscription", icon: Wallet, href: `${basePath}/subscription` },
-    { name: "Trading Bot Setup", icon: LinkIcon, href: `${basePath}/trading-setup` },
-    { name: "Trade Signals", icon: ChartCandlestick, href: `${basePath}/signals` },
+    { name: "Configure Bot", icon: LinkIcon, href: `${basePath}/trading-setup` },
     { name: "Trade History", icon: Layers, href: `${basePath}/trade-history` },
     { name: "Transactions", icon: History, href: `${basePath}/transactions` },
     { name: "Predict Market", icon: BarChart3, href: `${basePath}/predict` },
@@ -133,7 +132,7 @@ export default function UserSidebar({
       ],
     },
 
-    { name: "Trade Analytics", icon: PieChart, href: `${basePath}/analytics` },
+    { name: "Total Analytics", icon: PieChart, href: `${basePath}/analytics` },
     {
       name: "Profile Settings",
       icon: Settings,
