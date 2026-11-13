@@ -450,7 +450,9 @@ async function submitWorkingOrder(args: {
           `orders_http_${ordersRes.status}`
         );
       }
-      if ((ordersRes.data?.orders ?? []).length > 0) {
+      const resting =
+        ordersRes.data?.workingOrders ?? ordersRes.data?.orders ?? [];
+      if (resting.length > 0) {
         return deny('pending_order_check', 'pending_order_exists');
       }
     } catch (e) {

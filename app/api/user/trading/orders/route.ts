@@ -28,7 +28,9 @@ export async function GET() {
       );
     }
 
-    const orders = (res.data?.orders ?? []).map((o) => {
+    const rawOrders =
+      res.data?.workingOrders ?? res.data?.orders ?? [];
+    const orders = rawOrders.map((o) => {
       const w = (o as { workingOrderData?: Record<string, unknown> }).workingOrderData ?? (o as Record<string, unknown>);
       return {
         id: (w.workingOrderId ?? w.id ?? null) as string | null,

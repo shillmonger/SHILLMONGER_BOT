@@ -368,10 +368,14 @@ export interface CapitalWorkingOrder {
 
 export interface CapitalOrdersResponse {
   orders?: Array<{ workingOrderData?: CapitalWorkingOrder } & CapitalWorkingOrder>;
+  /** Actual field name returned by GET /api/v1/workingorders */
+  workingOrders?: Array<{ workingOrderData?: CapitalWorkingOrder } & CapitalWorkingOrder>;
 }
 
 export async function getOrders(userId: string, env?: BrokerEnvironment) {
-  return capitalRequest<CapitalOrdersResponse>(userId, 'GET', '/orders', { env });
+  // NOTE: Capital.com spells this endpoint all-lowercase — /workingorders.
+  // /orders returns 404.
+  return capitalRequest<CapitalOrdersResponse>(userId, 'GET', '/workingorders', { env });
 }
 
 export interface CapitalMarket {
@@ -504,7 +508,7 @@ export async function createWorkingOrder(
 
   // allowReauth=false — same rule as createPosition: never silently
   // retry an order submission that may have been accepted.
-  return capitalRequest<WorkingOrderResponse>(userId, 'POST', '/workingOrders', {
+  return capitalRequest<WorkingOrderResponse>(userId, 'POST', '/workingorders', {
     env,
     body,
     allowReauth: false,
