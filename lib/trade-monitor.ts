@@ -170,6 +170,11 @@ function activityMatchesExec(a: CapitalActivity, exec: ExecDoc): boolean {
   return true;
 }
 
+function activityLevel(a: CapitalActivity): number | null {
+  const d = asRecord(a.details);
+  return toNumber(d.level ?? a.level);
+}
+
 function toNumber(v: unknown): number | null {
   const n = typeof v === 'number' ? v : typeof v === 'string' ? parseFloat(v) : NaN;
   return Number.isFinite(n) ? n : null;
@@ -237,15 +242,16 @@ export async function syncTradeLifecycles(userId?: string): Promise<MonitorSumma
 
   await connectDB();
   // Non-terminal trades always; recently-closed trades missing realizedPnl
-  // are retried for 3 days so P/L backfills once history catches up.
+  // or exitLevel are retried for 3 days so close data backfills once
+  // history catches up.
   const pnlRetryCutoff = new Date(Date.now() - 3 * 86400_000);
   const execs = (await TradeExecution.find({
     $or: [
       { status: { $in: [...NON_TERMINAL] } },
       {
         status: 'closed',
-        realizedPnl: null,
         closedAt: { $gte: pnlRetryCutoff },
+        $or: [{ realizedPnl: null }, { exitLevel: null }],
       },
     ],
     ...(userId ? { userId } : {}),
@@ -516,6 +522,17 @@ async function reconcileOpen(
     : null;
   const pnl = txnPnl ?? close?.profit ?? close?.profitLoss ?? null;
 
+  // Exit price: prefer an explicit close-source activity (CLOSE_OUT /
+  // SL / TP), else the latest POSITION activity — its level is the
+  // price the position closed at.
+  const exitActivity =
+    candidates.find((a) =>
+      ['CLOSE_OUT', 'SL', 'TP'].includes(String(a.source ?? '').toUpperCase())
+    ) ??
+    candidates.find((a) => String(a.type ?? '').toUpperCase() === 'POSITION') ??
+    close;
+  const exitLevel = exitActivity ? activityLevel(exitActivity) : null;
+
   // Diagnostics: a close with no P/L means the transaction didn't match
   // or the field name differs — log what the broker actually returned.
   if (pnl == null) {
@@ -542,6 +559,7 @@ async function reconcileOpen(
   await markState(exec, 'closed', {
     realizedPnl: typeof pnl === 'number' ? pnl : null,
     unrealizedPnl: null,
+    exitLevel,
     closedAt,
     error: null,
   });
@@ -561,6 +579,7 @@ async function markState(
     confirmedAt?: Date;
     realizedPnl?: number | null;
     unrealizedPnl?: number | null;
+    exitLevel?: number | null;
     closedAt?: Date;
     error?: string | null;
   }
@@ -571,6 +590,7 @@ async function markState(
   if (fields.confirmedAt) $set.confirmedAt = fields.confirmedAt;
   if (fields.realizedPnl !== undefined) $set.realizedPnl = fields.realizedPnl;
   if (fields.unrealizedPnl !== undefined) $set.unrealizedPnl = fields.unrealizedPnl;
+  if (fields.exitLevel !== undefined) $set.exitLevel = fields.exitLevel;
   if (fields.closedAt) $set.closedAt = fields.closedAt;
   if (fields.error !== undefined) $set.error = fields.error;
   await TradeExecution.updateOne({ _id: exec._id }, { $set });

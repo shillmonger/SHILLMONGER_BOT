@@ -33,6 +33,8 @@ export interface ITradeExecution extends Document {
   direction: TradeDirection;
   size: number;
   entryLevel?: number;
+  /** Broker-reported exit/close price, captured by the monitor on close */
+  exitLevel?: number;
   stopLevel?: number;
   takeProfitLevel?: number;
   dealReference?: string;
@@ -76,6 +78,7 @@ const TradeExecutionSchema: Schema = new Schema(
     },
     size: { type: Number, required: true },
     entryLevel: { type: Number },
+    exitLevel: { type: Number, default: null },
     stopLevel: { type: Number },
     takeProfitLevel: { type: Number },
     dealReference: { type: String },

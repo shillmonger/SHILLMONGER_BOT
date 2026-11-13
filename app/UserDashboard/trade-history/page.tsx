@@ -32,6 +32,7 @@ interface ExecutionDoc {
   epic?: string | null;
   direction?: "BUY" | "SELL" | null;
   entryLevel?: number | null;
+  exitLevel?: number | null;
   size?: number | null;
   orderType?: string | null;
   status?: string | null;
@@ -68,7 +69,7 @@ const toTrade = (e: ExecutionDoc): Trade => {
     symbol: e.symbol || e.epic || "—",
     dir: e.direction === "SELL" ? "SELL" : "BUY",
     entry: e.entryLevel ?? null,
-    exit: null,
+    exit: e.exitLevel ?? null,
     opened: fmtDT(e.openedAt ?? e.createdAt),
     closed: e.closedAt ? fmtDT(e.closedAt) : null,
     pl: pnl,
