@@ -550,7 +550,44 @@ async function submitWorkingOrder(args: {
       return { executed: false, eligible: true, reason: 'submit_failed' };
     }
 
-    const { confirmed, dealId } = await confirmWithRetry(userId, dealReference, env, true);
+    const { confirmed: confConfirmed, dealId: confDealId } =
+      await confirmWithRetry(userId, dealReference, env, true);
+
+    /* Fallback: /confirms can lag for working orders. Verify the order is
+     * actually resting by listing working orders and matching on
+     * epic + direction + level. */
+    let confirmed = confConfirmed;
+    let dealId = confDealId;
+    if (!confirmed) {
+      try {
+        const ordersRes = await getOrders(userId, env);
+        const resting =
+          ordersRes.data?.workingOrders ?? ordersRes.data?.orders ?? [];
+        const match = resting.find((o) => {
+          const w =
+            (o as { workingOrderData?: Record<string, unknown> })
+              .workingOrderData ?? (o as Record<string, unknown>);
+          const lvl = Number(w.orderLevel ?? w.level);
+          return (
+            String(w.epic ?? '').toUpperCase() === epic &&
+            String(w.direction ?? '').toUpperCase() === direction &&
+            Math.abs(lvl - signal.entry) < 0.5
+          );
+        });
+        if (match) {
+          confirmed = true;
+          const w =
+            (match as { workingOrderData?: Record<string, unknown> })
+              .workingOrderData ?? (match as Record<string, unknown>);
+          dealId =
+            (w.dealId as string | undefined) ??
+            (w.workingOrderId as string | undefined) ??
+            dealId;
+        }
+      } catch {
+        // Verification failed — leave as 'submitted' for later reconcile.
+      }
+    }
 
     const execId = await recordExecution(userId, signal, {
       env, epic, direction, size, stopLevel,
