@@ -441,12 +441,20 @@ async function submitWorkingOrder(args: {
     try {
       const ordersRes = await getOrders(userId, env);
       if (!ordersRes.ok) {
-        return deny('pending_order_check', 'orders_unavailable');
+        console.error(
+          `[trading-engine] orders check failed user=${userId} ` +
+            `env=${env} status=${ordersRes.status}`
+        );
+        return deny(
+          'pending_order_check',
+          `orders_http_${ordersRes.status}`
+        );
       }
       if ((ordersRes.data?.orders ?? []).length > 0) {
         return deny('pending_order_check', 'pending_order_exists');
       }
-    } catch {
+    } catch (e) {
+      console.error(`[trading-engine] orders check threw user=${userId}:`, e);
       return deny('pending_order_check', 'orders_unavailable');
     }
 
