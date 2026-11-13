@@ -26,6 +26,10 @@ import {
   Scale,
   Bookmark,
   TriangleAlert,
+  ChartCandlestick,
+  ListChecks,
+  Microscope,
+  ChartNoAxesCombined,
   X,
 } from "lucide-react";
 
@@ -43,10 +47,10 @@ interface SidebarProps {
 type NavItem =
   | { name: string; icon: React.ElementType; href: string }
   | {
-      name: string;
-      icon: React.ElementType;
-      children: { name: string; icon: React.ElementType; href: string }[];
-    };
+    name: string;
+    icon: React.ElementType;
+    children: { name: string; icon: React.ElementType; href: string }[];
+  };
 
 const ACTIVE_CLS =
   "bg-gradient-to-r from-violet-600 to-purple-600 text-white shadow-lg shadow-violet-900/30";
@@ -101,8 +105,9 @@ export default function AdminSidebar({
         { name: "Position Limits", icon: CircleGauge, href: `${basePath}/BotSettings/position-limits` },
       ],
     },
-    { name: "Trade Signals", icon: ChartColumn, href: `${basePath}/signals` },
-    { name: "Trade History", icon: Layers, href: `${basePath}/trade-history` },
+    { name: "Trade Signals", icon: ChartCandlestick, href: `${basePath}/trade-signals` },
+    { name: "Trade Executions", icon: ListChecks, href: `${basePath}/trade-executions` },
+    { name: "Signal Evaluation", icon: Microscope, href: `${basePath}/signal-evaluation` },
     { name: "Total Analytics", icon: PieChart, href: `${basePath}/analytics` },
     {
       name: "Audit logs",
@@ -136,17 +141,17 @@ export default function AdminSidebar({
 
   const brand = () => (
     <div className="relative flex-shrink-0 flex items-center justify-start h-15 px-5 border-b border-border">
-          <Link href="/AdminDashboard/dashboard" className="flex flex-col gap-1">
-            <Image
-              src="/logo.png"
-              alt="Shillmonger"
-              width={160}
-              height={40}
-              priority
-              className="h-14 w-auto self-start"
-            />
-          </Link>
-        </div>
+      <Link href="/AdminDashboard/dashboard" className="flex flex-col gap-1">
+        <Image
+          src="/logo.png"
+          alt="Shillmonger"
+          width={160}
+          height={40}
+          priority
+          className="h-14 w-auto self-start"
+        />
+      </Link>
+    </div>
   );
 
   const renderNav = (onNavigate?: () => void) => (
@@ -192,8 +197,8 @@ export default function AdminSidebar({
             <button
               onClick={() => toggleGroup(item.name)}
               className={`group w-full flex items-center px-4 py-2.5 rounded-lg transition-all duration-200 cursor-pointer ${hasActiveChild
-                  ? "text-violet-600 dark:text-violet-400"
-                  : IDLE_CLS
+                ? "text-violet-600 dark:text-violet-400"
+                : IDLE_CLS
                 }`}
             >
               <item.icon

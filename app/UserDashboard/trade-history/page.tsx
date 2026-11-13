@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ArrowDownRight, ArrowUpRight } from "lucide-react";
 import { IBM_Plex_Mono } from "next/font/google";
 
@@ -8,25 +8,40 @@ import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 
 const plexMono = IBM_Plex_Mono({ weight: ["400", "500", "600"], subsets: ["latin"], display: "swap" });
 
-/* ───────────────── Types & sample data ───────────────── */
+/* ───────────────── Types ───────────────── */
 
 type Filter = "all" | "winning" | "losing" | "open" | "closed";
+type TradeStatus = "WIN" | "LOSS" | "OPEN" | "FAILED";
 
 interface Trade {
-  id: string; symbol: string; dir: "BUY" | "SELL"; entry: number; exit: number | null;
-  opened: string; closed: string | null; pl: number; status: "WIN" | "LOSS" | "OPEN";
+  id: string;
+  symbol: string;
+  dir: "BUY" | "SELL";
+  entry: number | null;
+  exit: number | null;
+  opened: string;
+  closed: string | null;
+  pl: number;
+  status: TradeStatus;
 }
 
-const TRADES: Trade[] = [
-  { id: "TRD-001", symbol: "XAU/USD", dir: "BUY", entry: 4388.23, exit: 4413.33, opened: "2026-11-11 09:14", closed: "2026-11-11 11:40", pl: 125.5, status: "WIN" },
-  { id: "TRD-002", symbol: "XAU/USD", dir: "SELL", entry: 4388.71, exit: 4397.77, opened: "2026-11-11 12:02", closed: "2026-11-11 12:51", pl: -45.3, status: "LOSS" },
-  { id: "TRD-003", symbol: "GBP/USD", dir: "SELL", entry: 1.2641, exit: 1.2603, opened: "2026-11-10 08:30", closed: "2026-11-10 14:05", pl: 78.25, status: "WIN" },
-  { id: "TRD-004", symbol: "USD/CAD", dir: "BUY", entry: 1.3712, exit: 1.3688, opened: "2026-11-10 15:11", closed: "2026-11-10 16:20", pl: -32.1, status: "LOSS" },
-  { id: "TRD-005", symbol: "AUD/USD", dir: "BUY", entry: 0.6544, exit: 0.6571, opened: "2026-11-09 07:45", closed: "2026-11-09 10:30", pl: 56.8, status: "WIN" },
-  { id: "TRD-006", symbol: "USD/CHF", dir: "SELL", entry: 0.8812, exit: 0.8799, opened: "2026-11-09 13:00", closed: "2026-11-09 15:42", pl: 12.4, status: "WIN" },
-  { id: "TRD-007", symbol: "XAU/USD", dir: "BUY", entry: 4405.72, exit: null, opened: "2026-11-12 08:20", closed: null, pl: 25.16, status: "OPEN" },
-  { id: "TRD-008", symbol: "EUR/USD", dir: "SELL", entry: 1.0842, exit: null, opened: "2026-11-12 09:05", closed: null, pl: -19.0, status: "OPEN" },
-];
+interface ExecutionDoc {
+  _id: string;
+  dealId?: string | null;
+  symbol?: string | null;
+  epic?: string | null;
+  direction?: "BUY" | "SELL" | null;
+  entryLevel?: number | null;
+  size?: number | null;
+  orderType?: string | null;
+  status?: string | null;
+  realizedPnl?: number | null;
+  unrealizedPnl?: number | null;
+  openedAt?: string | null;
+  closedAt?: string | null;
+  createdAt?: string | null;
+  error?: string | null;
+}
 
 /* ───────────────── Helpers ───────────────── */
 
@@ -34,6 +49,32 @@ const money = (v: number) =>
   `$${Math.abs(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const signed = (v: number) => `${v >= 0 ? "+" : "-"}${money(v)}`;
 const plTone = (v: number) => (v >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400");
+
+const fmtDT = (iso?: string | null) => {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+
+const toTrade = (e: ExecutionDoc): Trade => {
+  const isOpen = e.status === "open" || e.status === "submitted" || e.status === "pending";
+  const failed = e.status === "rejected" || e.status === "failed" || e.status === "cancelled";
+  const pnl = isOpen ? (e.unrealizedPnl ?? 0) : (e.realizedPnl ?? 0);
+
+  return {
+    id: e.dealId || e._id.slice(-8).toUpperCase(),
+    symbol: e.symbol || e.epic || "—",
+    dir: e.direction === "SELL" ? "SELL" : "BUY",
+    entry: e.entryLevel ?? null,
+    exit: null,
+    opened: fmtDT(e.openedAt ?? e.createdAt),
+    closed: e.closedAt ? fmtDT(e.closedAt) : null,
+    pl: pnl,
+    status: failed ? "FAILED" : isOpen ? "OPEN" : pnl >= 0 ? "WIN" : "LOSS",
+  };
+};
 
 const TH = "px-4 py-3 text-left text-[10px] font-bold uppercase tracking-widest text-muted-foreground";
 const TD = "px-4 py-3.5 text-sm font-medium tabular-nums";
@@ -66,7 +107,34 @@ function Segmented<T extends string>({ options, value, onChange }: { options: { 
 
 export default function TradeHistoryPage() {
   const [filter, setFilter] = useState<Filter>("all");
-  const rows = TRADES.filter((t) =>
+  const [trades, setTrades] = useState<Trade[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      try {
+        const res = await fetch("/api/user/trading/executions?limit=500", { cache: "no-store" });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(payload.error || "Failed to load trade history");
+        if (!cancelled) {
+          setTrades((payload.executions ?? []).map(toTrade));
+          setError(null);
+        }
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load trade history");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    load();
+    return () => { cancelled = true; };
+  }, []);
+
+  const rows = trades.filter((t) =>
     filter === "all" ? true : filter === "winning" ? t.status === "WIN" : filter === "losing" ? t.status === "LOSS" : filter === "open" ? t.status === "OPEN" : t.status !== "OPEN");
 
   return (
@@ -107,12 +175,14 @@ export default function TradeHistoryPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/40">
-                {rows.length === 0 && <tr><td colSpan={8} className="py-10 text-center text-sm text-muted-foreground">No trades match this filter.</td></tr>}
+                {loading && <tr><td colSpan={8} className="py-10 text-center text-sm text-muted-foreground">Loading trade history…</td></tr>}
+                {!loading && error && <tr><td colSpan={8} className="py-10 text-center text-sm text-red-600 dark:text-red-400">{error}</td></tr>}
+                {!loading && !error && rows.length === 0 && <tr><td colSpan={8} className="py-10 text-center text-sm text-muted-foreground">No trades match this filter.</td></tr>}
                 {rows.map((t) => (
                   <tr key={t.id} className="hover:bg-muted/30">
                     <td className={TD}><div className="font-bold">{t.symbol}</div><div className="text-[10px] text-muted-foreground">{t.id}</div></td>
                     <td className={TD}><DirTag dir={t.dir} /></td>
-                    <td className={TD}>{t.entry}</td>
+                    <td className={TD}>{t.entry ?? "—"}</td>
                     <td className={TD}>{t.exit ?? "—"}</td>
                     <td className={TD}>{t.opened}</td>
                     <td className={TD}>{t.closed ?? "—"}</td>
@@ -121,6 +191,7 @@ export default function TradeHistoryPage() {
                       <span className={`rounded-full border px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-widest ${
                         t.status === "WIN" ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
                         : t.status === "LOSS" ? "border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400"
+                        : t.status === "FAILED" ? "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300"
                         : "border-violet-500/30 bg-violet-500/10 text-violet-600 dark:text-violet-300"}`}>
                         {t.status}
                       </span>
@@ -133,7 +204,7 @@ export default function TradeHistoryPage() {
         </Card>
 
         <p className="pb-6 text-center text-[11px] text-muted-foreground">
-          Leveraged trading and CFDs carry significant risk of loss. All figures shown are simulated sample data.
+          Leveraged trading and CFDs carry significant risk of loss.
         </p>
       </div>
     </main>
