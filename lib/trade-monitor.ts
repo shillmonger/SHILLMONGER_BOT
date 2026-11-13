@@ -187,9 +187,9 @@ function transactionTime(t: CapitalTransaction): number {
  * + timestamp after the position opened.
  */
 function transactionMatchesExec(t: CapitalTransaction, exec: ExecDoc): boolean {
-  const type = String(t.transactionType ?? '').toUpperCase();
+  const type = String(t.transactionType ?? t.type ?? '').toUpperCase();
   const note = String(t.note ?? '').toLowerCase();
-  if (type !== 'TRADE' && !note.includes('closed') && !note.includes('trade')) {
+  if (type !== 'TRADE' && type !== '' && !note.includes('closed') && !note.includes('trade')) {
     return false;
   }
   const inst = String(t.instrumentName ?? '').toUpperCase();
@@ -508,6 +508,16 @@ async function reconcileOpen(
 
   const txnPnl = closeTxn ? toNumber(closeTxn.pnl) : null;
   const pnl = txnPnl ?? close?.profit ?? close?.profitLoss ?? null;
+
+  // Diagnostics: a close with no P/L means the transaction didn't match
+  // or the field name differs — log what the broker actually returned.
+  if (pnl == null) {
+    console.warn(
+      `[trade-monitor] no pnl for exec ${String(exec._id)} deal=${exec.dealId} ` +
+        `txns=${txns.length} matchedTxn=${closeTxn ? JSON.stringify(closeTxn).slice(0, 600) : 'none'} ` +
+        `sample=${JSON.stringify(txns.slice(0, 2)).slice(0, 600)}`
+    );
+  }
 
   const closedAtRaw =
     (closeTxn?.dateUtc ?? closeTxn?.dateUTC ?? closeTxn?.date) ??
