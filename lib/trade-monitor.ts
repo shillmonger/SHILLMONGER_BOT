@@ -187,6 +187,8 @@ function transactionTime(t: CapitalTransaction): number {
  * + timestamp after the position opened.
  */
 function transactionMatchesExec(t: CapitalTransaction, exec: ExecDoc): boolean {
+  // Transactions carry the position dealId — exact match wins outright.
+  if (exec.dealId && t.dealId === exec.dealId) return true;
   const type = String(t.transactionType ?? t.type ?? '').toUpperCase();
   const note = String(t.note ?? '').toLowerCase();
   if (type !== 'TRADE' && type !== '' && !note.includes('closed') && !note.includes('trade')) {
@@ -506,7 +508,12 @@ async function reconcileOpen(
     candidates[0] ??
     null;
 
-  const txnPnl = closeTxn ? toNumber(closeTxn.pnl) : null;
+  // Capital.com puts realized P/L on TRADE-close transactions; observed
+  // field priority: pnl -> cash -> size (size = P/L amount, NOT units —
+  // verified: position size 0.09 produced transaction size "0.28" = +$0.28).
+  const txnPnl = closeTxn
+    ? toNumber(closeTxn.pnl) ?? toNumber(closeTxn.cash) ?? toNumber(closeTxn.size)
+    : null;
   const pnl = txnPnl ?? close?.profit ?? close?.profitLoss ?? null;
 
   // Diagnostics: a close with no P/L means the transaction didn't match

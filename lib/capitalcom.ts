@@ -704,6 +704,8 @@ export interface CapitalTransaction {
   instrumentName?: string;
   note?: string;
   reference?: string;
+  /** TRADE-close transactions carry the realized P/L in `size`/`cash`/`pnl` */
+  dealId?: string;
   size?: string | number;
   status?: string;
   openLevel?: string | number;
