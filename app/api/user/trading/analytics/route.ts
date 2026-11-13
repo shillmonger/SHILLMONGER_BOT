@@ -1,13 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
 import BotConfig from '@/models/BotConfig';
+import TradeExecution from '@/models/TradeExecution';
 import { getCurrentUser } from '@/lib/auth-helper';
-import { getHistoryActivity, CapitalApiError } from '@/lib/capitalcom';
+
+const OPEN_STATUSES = new Set(['open', 'submitted', 'pending']);
 
 /**
  * GET /api/user/trading/analytics?days=90
- * Aggregates the authenticated user's broker activity into daily net P/L and
- * win rate. Only broker-sourced data — no simulated figures.
+ * Aggregates the authenticated user's TRADE_EXECUTIONS records into daily
+ * net P/L and win rate:
+ *   - closed trades contribute realizedPnl, bucketed by closedAt day
+ *   - open trades contribute unrealizedPnl to today's bucket
+ *   - wins/losses count closed trades only
  */
 export async function GET(request: NextRequest) {
   try {
@@ -24,38 +29,35 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const days = Math.min(Math.max(Number(searchParams.get('days') ?? 90) || 90, 1), 90);
 
-    const to = new Date();
-    const from = new Date(to.getTime() - days * 86400000);
+    const from = new Date(Date.now() - days * 86400000);
 
-    const res = await getHistoryActivity(
-      userId,
-      { from: from.toISOString(), to: to.toISOString() },
-      env
-    );
-    if (!res.ok) {
-      return NextResponse.json(
-        { error: `Capital.com history request failed (HTTP ${res.status})`, daily: [] },
-        { status: res.status === 0 ? 504 : 502 }
-      );
-    }
+    const executions = await TradeExecution.find({
+      userId: user._id,
+      environment: env,
+      createdAt: { $gte: from },
+    })
+      .select('status realizedPnl unrealizedPnl closedAt updatedAt createdAt')
+      .sort({ createdAt: -1 })
+      .limit(5000)
+      .lean();
 
-    // Bucket realized P/L by UTC day. Capital.com activity entries expose a
-    // profit/profitLoss field on closed-position activities.
+    const dayKey = (d: Date) => d.toISOString().slice(0, 10);
+    const todayKey = dayKey(new Date());
+
     const dailyMap = new Map<string, number>();
     let wins = 0;
     let losses = 0;
 
-    for (const entry of res.data?.activities ?? []) {
-      const a = (entry as { activity?: Record<string, unknown> }).activity ??
-        (entry as Record<string, unknown>);
-      const profit = a.profit ?? a.profitLoss;
-      if (typeof profit !== 'number') continue;
-
-      const rawDate = (a.closedDate ?? a.createdDateUTC ?? a.createdDate) as string | undefined;
-      const day = rawDate ? rawDate.slice(0, 10) : toISOStringDay(new Date());
-      dailyMap.set(day, (dailyMap.get(day) ?? 0) + profit);
-      if (profit > 0) wins += 1;
-      else if (profit < 0) losses += 1;
+    for (const e of executions) {
+      if (e.status === 'closed') {
+        if (typeof e.realizedPnl !== 'number') continue;
+        const day = e.closedAt ? dayKey(new Date(e.closedAt)) : todayKey;
+        dailyMap.set(day, (dailyMap.get(day) ?? 0) + e.realizedPnl);
+        if (e.realizedPnl > 0) wins += 1;
+        else if (e.realizedPnl < 0) losses += 1;
+      } else if (OPEN_STATUSES.has(e.status ?? '') && typeof e.unrealizedPnl === 'number') {
+        dailyMap.set(todayKey, (dailyMap.get(todayKey) ?? 0) + e.unrealizedPnl);
+      }
     }
 
     const daily = Array.from(dailyMap.entries())
@@ -64,7 +66,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       environment: env,
-      source: 'broker',
+      source: 'trade_executions',
       days,
       daily,
       winRate: wins + losses > 0 ? Math.round((wins / (wins + losses)) * 100) : null,
@@ -72,14 +74,7 @@ export async function GET(request: NextRequest) {
       losses,
     });
   } catch (error) {
-    if (error instanceof CapitalApiError) {
-      return NextResponse.json({ error: error.message, daily: [] }, { status: error.status });
-    }
     console.error('Analytics error:', error);
     return NextResponse.json({ error: 'Failed to compute analytics' }, { status: 500 });
   }
-}
-
-function toISOStringDay(d: Date): string {
-  return d.toISOString().slice(0, 10);
 }

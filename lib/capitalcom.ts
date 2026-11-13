@@ -607,19 +607,78 @@ export interface CapitalHistoryActivityResponse {
 
 export async function getHistoryActivity(
   userId: string,
-  params: { from?: string; to?: string } = {},
+  params: {
+    from?: string;
+    to?: string;
+    /** Filter to a single deal */
+    dealId?: string;
+    /** detailed=true returns extra fields incl. profit/loss */
+    detailed?: boolean;
+    /** Seconds back from now (max 86400 = 1 day) */
+    lastPeriod?: number;
+  } = {},
   env?: BrokerEnvironment
 ) {
-  const qs = new URLSearchParams();
-  if (params.from) qs.set('from', params.from);
-  if (params.to) qs.set('to', params.to);
-  const suffix = qs.toString() ? `?${qs.toString()}` : '';
-  return capitalRequest<CapitalHistoryActivityResponse>(
-    userId,
-    'GET',
-    `/history/activity${suffix}`,
-    { env, timeoutMs: 20000 }
-  );
+  /* Capital.com caps the from/to range at ONE DAY and only returns P/L
+   * fields when detailed=true. Larger ranges are chunked into daily
+   * windows and merged so callers can ask for any span. */
+  const DAY_MS = 86400_000;
+
+  const baseParams = new URLSearchParams();
+  if (params.dealId) baseParams.set('dealId', params.dealId);
+  if (params.detailed) baseParams.set('detailed', 'true');
+  if (params.lastPeriod !== undefined) {
+    baseParams.set('lastPeriod', String(Math.min(params.lastPeriod, 86400)));
+  }
+
+  const fromMs = params.from ? Date.parse(params.from) : NaN;
+  const toMs = params.to ? Date.parse(params.to) : Date.now();
+  const hasRange = Number.isFinite(fromMs) && Number.isFinite(toMs) && toMs > fromMs;
+
+  // dealId-filtered or lastPeriod queries don't need date chunking.
+  if (params.dealId || params.lastPeriod !== undefined || !hasRange) {
+    const suffix = baseParams.toString() ? `?${baseParams.toString()}` : '';
+    return capitalRequest<CapitalHistoryActivityResponse>(
+      userId,
+      'GET',
+      `/history/activity${suffix}`,
+      { env, timeoutMs: 20000 }
+    );
+  }
+
+  // Chunk [from, to] into <=1-day windows.
+  const chunks: Array<{ f: number; t: number }> = [];
+  let cursor = fromMs;
+  while (cursor < toMs) {
+    const end = Math.min(cursor + DAY_MS, toMs);
+    chunks.push({ f: cursor, t: end });
+    cursor = end;
+  }
+
+  const merged: CapitalHistoryActivityResponse = { activities: [] };
+  let lastStatus = 200;
+  let ok = true;
+  for (const c of chunks) {
+    const qs = new URLSearchParams(baseParams);
+    qs.set('from', new Date(c.f).toISOString().slice(0, 19));
+    qs.set('to', new Date(c.t).toISOString().slice(0, 19));
+    const res = await capitalRequest<CapitalHistoryActivityResponse>(
+      userId,
+      'GET',
+      `/history/activity?${qs.toString()}`,
+      { env, timeoutMs: 20000 }
+    );
+    lastStatus = res.status;
+    if (!res.ok) {
+      ok = false;
+      continue; // skip failed day, keep the rest
+    }
+    merged.activities = [
+      ...(merged.activities ?? []),
+      ...(res.data?.activities ?? []),
+    ];
+  }
+  return { ok, status: ok ? 200 : lastStatus, data: merged };
 }
 
 export interface CapitalTransaction {

@@ -38,7 +38,6 @@ import {
 } from '@/lib/capitalcom';
 
 const NON_TERMINAL = ['pending', 'submitted', 'open'] as const;
-const HISTORY_WINDOW_DAYS = 90;
 
 interface ExecDoc {
   _id: import('mongoose').Types.ObjectId;
@@ -52,6 +51,8 @@ interface ExecDoc {
   dealReference?: string;
   dealId?: string;
   confirmedAt?: Date | null;
+  openedAt?: Date | null;
+  createdAt?: Date;
 }
 
 export interface MonitorSummary {
@@ -115,6 +116,51 @@ function positionOpenedAt(p: CapitalPositionEntry): Date | undefined {
   return undefined;
 }
 
+function activityTime(a: CapitalActivity): number {
+  const raw =
+    (a.closedDate as string | undefined) ??
+    a.createdDateUTC ??
+    a.createdDate ??
+    '';
+  const t = Date.parse(String(raw));
+  return Number.isFinite(t) ? t : 0;
+}
+
+/**
+ * Does this history activity belong to this execution?
+ *  1) any *dealId-ish field equals the position dealId, OR
+ *  2) same epic + direction + entry level (±2) + not before openedAt.
+ */
+function activityMatchesExec(a: CapitalActivity, exec: ExecDoc): boolean {
+  for (const [k, v] of Object.entries(a)) {
+    if (
+      typeof v === 'string' &&
+      /dealid$/i.test(k) &&
+      v === exec.dealId
+    ) {
+      return true;
+    }
+  }
+  const epic = typeof a.epic === 'string' ? a.epic.toUpperCase() : '';
+  if (!exec.epic || epic !== exec.epic.toUpperCase()) return false;
+  const dir = typeof a.direction === 'string' ? a.direction.toUpperCase() : '';
+  if (exec.direction && dir && dir !== exec.direction) return false;
+  if (
+    exec.entryLevel != null &&
+    typeof a.level === 'number' &&
+    Math.abs(a.level - exec.entryLevel) > 2
+  ) {
+    return false;
+  }
+  if (exec.openedAt) {
+    const t = activityTime(a);
+    if (t > 0 && t < new Date(exec.openedAt).getTime() - 10 * 60_000) {
+      return false;
+    }
+  }
+  return true;
+}
+
 function flattenActivities(
   activities: Array<{ activity?: CapitalActivity } & CapitalActivity> | undefined
 ): CapitalActivity[] {
@@ -134,8 +180,18 @@ export async function syncTradeLifecycles(userId?: string): Promise<MonitorSumma
   };
 
   await connectDB();
+  // Non-terminal trades always; recently-closed trades missing realizedPnl
+  // are retried for 3 days so P/L backfills once history catches up.
+  const pnlRetryCutoff = new Date(Date.now() - 3 * 86400_000);
   const execs = (await TradeExecution.find({
-    status: { $in: [...NON_TERMINAL] },
+    $or: [
+      { status: { $in: [...NON_TERMINAL] } },
+      {
+        status: 'closed',
+        realizedPnl: null,
+        closedAt: { $gte: pnlRetryCutoff },
+      },
+    ],
     ...(userId ? { userId } : {}),
   }).lean()) as unknown as ExecDoc[];
 
@@ -192,15 +248,23 @@ async function syncGroup(
   const positions = posRes.data?.positions ?? [];
 
   // History is only fetched lazily if a close is actually detected.
+  // detailed=true is required — P/L fields are absent otherwise. The
+  // window starts at the earliest exec open time (chunked into <=1-day
+  // requests inside getHistoryActivity).
   let historyCache: CapitalActivity[] | null = null;
   const getHistory = async (): Promise<CapitalActivity[]> => {
     if (historyCache) return historyCache;
-    const from = new Date(
-      Date.now() - HISTORY_WINDOW_DAYS * 86400_000
-    ).toISOString();
+    const earliest = execs.reduce((min, e) => {
+      const t = new Date(e.openedAt ?? e.createdAt ?? Date.now()).getTime();
+      return Number.isFinite(t) && t < min ? t : min;
+    }, Date.now());
     const res = await getHistoryActivity(
       userId,
-      { from, to: new Date().toISOString() },
+      {
+        from: new Date(earliest - 3600_000).toISOString(),
+        to: new Date().toISOString(),
+        detailed: true,
+      },
       env
     );
     historyCache = res.ok ? flattenActivities(res.data?.activities) : [];
@@ -214,7 +278,9 @@ async function syncGroup(
         await reconcileSubmitted(exec, userId, env, summary);
       } else if (exec.status === 'pending') {
         await reconcilePending(exec, workingOrders, positions, summary);
-      } else if (exec.status === 'open') {
+      } else if (exec.status === 'open' || exec.status === 'closed') {
+        // 'closed' only reaches here when realizedPnl is null (retry
+        // window above) — reconcileOpen re-checks history and backfills.
         await reconcileOpen(exec, positions, getHistory, summary);
       }
     } catch (e) {
@@ -347,10 +413,19 @@ async function reconcileOpen(
   }
 
   // Position is gone — find the closing activity for realized P/L.
+  // The close deal carries its OWN dealId, so match on any deal-id-ish
+  // field or epic+direction+level+time, then prefer the candidate that
+  // actually carries a P/L figure (the OPEN activity also matches ids).
   const history = await getHistory();
-  const close = history.find(
-    (a) => String(a.dealId ?? '') === String(exec.dealId ?? '')
-  );
+  const candidates = history
+    .filter((a) => activityMatchesExec(a, exec))
+    .sort((x, y) => activityTime(y) - activityTime(x));
+  const close =
+    candidates.find(
+      (a) => typeof a.profit === 'number' || typeof a.profitLoss === 'number'
+    ) ??
+    candidates[0] ??
+    null;
   const pnl = close?.profit ?? close?.profitLoss;
   const closedAtRaw =
     close?.closedDate ?? close?.createdDateUTC ?? close?.createdDate;

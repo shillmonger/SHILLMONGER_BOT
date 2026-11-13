@@ -1158,7 +1158,7 @@ function Analytics({
       )}
       {!loading && series.length === 0 && (
         <p className="rounded-xl border border-border/60 bg-muted/20 px-4 py-3 text-xs text-muted-foreground">
-          No trading activity in this period yet. Analytics are built from real Capital.com account history.
+          No trading activity in this period yet. Analytics are built from your trade execution history.
         </p>
       )}
       {/* Daily profit / loss: interactive bar chart */}
@@ -1190,7 +1190,7 @@ function Analytics({
           <CardHeader>
             <div className="flex items-center justify-between gap-3">
               <CardTitle className="text-xl font-extrabold tracking-tight">Weekly Performance</CardTitle>
-              <SampleBadge text={`CAPITAL.COM · ${env.toUpperCase()}`} tone={env === "live" ? "green" : "amber"} />
+              <SampleBadge text={`TRADE EXECUTIONS · ${env.toUpperCase()}`} tone={env === "live" ? "green" : "amber"} />
             </div>
             <CardDescription>Net P/L per week, last 12 weeks</CardDescription>
           </CardHeader>
@@ -1203,7 +1203,7 @@ function Analytics({
           <CardHeader>
             <div className="flex items-center justify-between gap-3">
               <CardTitle className="text-xl font-extrabold tracking-tight">Monthly Performance</CardTitle>
-              <SampleBadge text={`CAPITAL.COM · ${env.toUpperCase()}`} tone={env === "live" ? "green" : "amber"} />
+              <SampleBadge text={`TRADE EXECUTIONS · ${env.toUpperCase()}`} tone={env === "live" ? "green" : "amber"} />
             </div>
             <CardDescription>Net P/L per 30-day period, last 90 days</CardDescription>
           </CardHeader>
@@ -1216,7 +1216,7 @@ function Analytics({
       {/* Winning vs losing trades: unchanged */}
       <Card className="border-violet-500/20 shadow-sm">
         <CardHeader className="flex flex-row items-center justify-between space-y-0">
-          <CardTitle className="text-xl font-extrabold tracking-tight">Winning vs Losing Trades</CardTitle><SampleBadge text={`CAPITAL.COM · ${env.toUpperCase()}`} tone={env === "live" ? "green" : "amber"} />
+          <CardTitle className="text-xl font-extrabold tracking-tight">Winning vs Losing Trades</CardTitle><SampleBadge text={`TRADE EXECUTIONS · ${env.toUpperCase()}`} tone={env === "live" ? "green" : "amber"} />
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="flex h-2 w-full overflow-hidden rounded-full bg-muted">
