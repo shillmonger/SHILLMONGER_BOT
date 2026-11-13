@@ -46,7 +46,7 @@ const BotConfigSchema: Schema = new Schema(
     },
     automationEnabled: {
       type: Boolean,
-      default: false,
+      default: true,
     },
     emergencyStop: {
       type: Boolean,

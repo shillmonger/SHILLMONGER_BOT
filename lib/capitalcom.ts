@@ -450,6 +450,68 @@ export async function createPosition(
   });
 }
 
+export interface WorkingOrderParams {
+  epic: string;
+  direction: 'BUY' | 'SELL';
+  /** Capital.com working-order type */
+  type: 'LIMIT' | 'STOP';
+  size: number;
+  /** Trigger/limit price — required for working orders */
+  level: number;
+  stopLevel?: number;
+  profitLevel?: number;
+  guaranteedStop?: boolean;
+  /** ISO-8601 expiry — Capital.com requires this for working orders */
+  goodTillDate: string;
+}
+
+export interface WorkingOrderResponse {
+  dealReference?: string;
+  workingOrder?: {
+    workingOrderId?: string;
+    dealReference?: string;
+    epic?: string;
+    direction?: string;
+    type?: string;
+    level?: number;
+    size?: number;
+    status?: string;
+  };
+}
+
+/**
+ * Submit a pending (working) order — LIMIT or STOP — for a user.
+ * Returns the dealReference ONLY; the caller MUST confirm via
+ * confirmPosition before treating the order as resting. Exactly one
+ * HTTP attempt: never call in a retry loop.
+ */
+export async function createWorkingOrder(
+  userId: string,
+  params: WorkingOrderParams,
+  env?: BrokerEnvironment
+): Promise<CapitalResponse<WorkingOrderResponse>> {
+  const body: Record<string, unknown> = {
+    epic: params.epic,
+    direction: params.direction,
+    type: params.type,
+    size: params.size,
+    level: params.level,
+    goodTillDate: params.goodTillDate,
+    guaranteedStop: params.guaranteedStop ?? false,
+  };
+  if (params.stopLevel !== undefined) body.stopLevel = params.stopLevel;
+  if (params.profitLevel !== undefined) body.profitLevel = params.profitLevel;
+
+  // allowReauth=false — same rule as createPosition: never silently
+  // retry an order submission that may have been accepted.
+  return capitalRequest<WorkingOrderResponse>(userId, 'POST', '/workingOrders', {
+    env,
+    body,
+    allowReauth: false,
+    timeoutMs: 20000,
+  });
+}
+
 export interface DealConfirmation {
   dealStatus?: string;
   affectedDeals?: Array<{
@@ -460,10 +522,18 @@ export interface DealConfirmation {
     level?: number;
     status?: string;
   }>;
+  /** Present when confirming a working order instead of a position */
+  workingOrder?: {
+    workingOrderId?: string;
+    dealId?: string;
+    status?: string;
+  };
 }
 
 export interface ConfirmResponse {
   dealConfirmation?: DealConfirmation;
+  /** Alternate confirmation envelope returned for working orders */
+  workingOrderConfirmation?: DealConfirmation;
   [key: string]: unknown;
 }
 

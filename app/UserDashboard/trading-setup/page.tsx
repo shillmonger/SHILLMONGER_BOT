@@ -142,10 +142,12 @@ interface TradingData {
   wins: number;
   losses: number;
   botState: BotState;
+  automationEnabled: boolean;
   emergencyStop: boolean;
   broker: ApiBrokerStatus | null;
   refresh: () => void;
   setBot: (s: BotState) => Promise<void>;
+  setAutomationEnabled: (v: boolean) => Promise<void>;
   setEmergencyStop: (v: boolean) => Promise<void>;
   setEnvironment: (m: Mode) => Promise<boolean>;
 }
@@ -217,6 +219,7 @@ function useTradingData(environment: Mode): TradingData {
   const [wins, setWins] = useState(0);
   const [losses, setLosses] = useState(0);
   const [botState, setBotState] = useState<BotState>("stopped");
+  const [automationEnabled, setAutomationEnabledState] = useState(false);
   const [emergencyStop, setEmergencyStopState] = useState(false);
   const [broker, setBroker] = useState<ApiBrokerStatus | null>(null);
   const [tick, setTick] = useState(0);
@@ -232,7 +235,7 @@ function useTradingData(environment: Mode): TradingData {
         const [dash, pos, hist, ana, bot, brk] = await Promise.all([
           apiGet<{
             environment?: Mode; source?: TradingData["source"]; account?: { balance?: number } | null;
-            summary?: ApiSummary; bot?: { state?: BotState; emergencyStop?: boolean; environment?: Mode } | null;
+            summary?: ApiSummary; bot?: { state?: BotState; automationEnabled?: boolean; emergencyStop?: boolean; environment?: Mode } | null;
             reason?: string;
           }>("/api/user/trading/dashboard"),
           apiGet<{ positions?: ApiPosition[] }>("/api/user/trading/positions").catch(() => ({ positions: [] })),
@@ -240,7 +243,7 @@ function useTradingData(environment: Mode): TradingData {
           apiGet<{ daily?: AnalyticsDaily[]; winRate?: number | null; wins?: number; losses?: number }>(
             "/api/user/trading/analytics?days=90"
           ).catch((): { daily?: AnalyticsDaily[]; winRate?: number | null; wins?: number; losses?: number } => ({ daily: [] })),
-          apiGet<{ bot?: { state?: BotState; emergencyStop?: boolean; environment?: Mode } | null }>(
+          apiGet<{ bot?: { state?: BotState; automationEnabled?: boolean; emergencyStop?: boolean; environment?: Mode } | null }>(
             "/api/user/trading/bot"
           ).catch(() => ({ bot: null })),
           apiGet<ApiBrokerStatus>("/api/user/capital/status").catch(() => null),
@@ -259,6 +262,8 @@ function useTradingData(environment: Mode): TradingData {
         setLosses(ana.losses ?? 0);
         const bs = bot.bot?.state ?? dash.bot?.state;
         if (bs) setBotState(bs as BotState);
+        const ae = bot.bot?.automationEnabled ?? dash.bot?.automationEnabled;
+        if (typeof ae === "boolean") setAutomationEnabledState(ae);
         const es = bot.bot?.emergencyStop ?? dash.bot?.emergencyStop;
         if (typeof es === "boolean") setEmergencyStopState(es);
         setBroker(brk);
@@ -278,6 +283,11 @@ function useTradingData(environment: Mode): TradingData {
     setBotState(next);
   }, []);
 
+  const setAutomationEnabled = useCallback(async (v: boolean) => {
+    const data = await apiSend<{ bot?: { automationEnabled?: boolean } }>("/api/user/trading/bot", "PUT", { automationEnabled: v });
+    setAutomationEnabledState(data.bot?.automationEnabled ?? v);
+  }, []);
+
   const setEmergencyStop = useCallback(async (v: boolean) => {
     const data = await apiSend<{ bot?: { emergencyStop?: boolean } }>("/api/user/trading/bot", "PUT", { emergencyStop: v });
     setEmergencyStopState(data.bot?.emergencyStop ?? v);
@@ -295,8 +305,8 @@ function useTradingData(environment: Mode): TradingData {
 
   return {
     loading, error, source, environment, connected, summary, positions, trades,
-    daily, winRate, wins, losses, botState, emergencyStop, broker,
-    refresh, setBot, setEmergencyStop, setEnvironment,
+    daily, winRate, wins, losses, botState, automationEnabled, emergencyStop, broker,
+    refresh, setBot, setAutomationEnabled, setEmergencyStop, setEnvironment,
   };
 }
 
@@ -791,7 +801,19 @@ function ToggleRow({ label, desc, on, onToggle }: { label: string; desc: string;
 
 function BotControl({
   bot, setBot, env, onEnv, statusNote,
-}: { bot: BotState; setBot: (b: BotState) => void; env: Mode; onEnv: (m: Mode) => void; statusNote?: string }) {
+  automationEnabled, onAutomationEnabled,
+  emergencyStop, onEmergencyStop,
+}: {
+  bot: BotState;
+  setBot: (b: BotState) => void;
+  env: Mode;
+  onEnv: (m: Mode) => void;
+  statusNote?: string;
+  automationEnabled: boolean;
+  onAutomationEnabled: (v: boolean) => void;
+  emergencyStop: boolean;
+  onEmergencyStop: (v: boolean) => void;
+}) {
   return (
     <Card className="gap-3 border-violet-500/20 py-4 shadow-sm">
       <CardHeader className="flex flex-row items-center justify-between space-y-0 px-4">
@@ -826,6 +848,18 @@ function BotControl({
             desc="Temporarily halt the bot"
             on={bot === "paused"}
             onToggle={() => setBot(bot === "paused" ? "running" : "paused")}
+          />
+          <ToggleRow
+            label="Emergency Stop"
+            desc="Halt all trading immediately"
+            on={emergencyStop}
+            onToggle={() => onEmergencyStop(!emergencyStop)}
+          />
+          <ToggleRow
+            label="Automation"
+            desc="Execute signals on your account"
+            on={automationEnabled}
+            onToggle={() => onAutomationEnabled(!automationEnabled)}
           />
         </div>
         <p className="text-xs text-muted-foreground">{statusNote ?? "Automation preference only — order execution requires a connected broker."}</p>
@@ -1343,6 +1377,24 @@ function Dashboard({
     }
   };
 
+  const handleAutomation = async (v: boolean) => {
+    try {
+      await data.setAutomationEnabled(v);
+      toast.success(v ? "Automation enabled — signals will execute" : "Automation disabled");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to update automation");
+    }
+  };
+
+  const handleEmergencyStop = async (v: boolean) => {
+    try {
+      await data.setEmergencyStop(v);
+      toast.success(v ? "Emergency stop activated" : "Emergency stop cleared");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to update emergency stop");
+    }
+  };
+
   const statusNote = !data.connected
     ? "Broker not connected — connect Capital.com in Trading Setup."
     : data.botState === "running"
@@ -1440,6 +1492,10 @@ function Dashboard({
               env={env}
               onEnv={switchEnv}
               statusNote={statusNote}
+              automationEnabled={data.automationEnabled}
+              onAutomationEnabled={(v) => void handleAutomation(v)}
+              emergencyStop={data.emergencyStop}
+              onEmergencyStop={(v) => void handleEmergencyStop(v)}
             />
           </div>
           {data.emergencyStop && (
@@ -1573,7 +1629,6 @@ function Dashboard({
 /* ───────────────── Page ───────────────── */
 
 export default function TradingSetupPage() {
-  const router = useRouter();
   const [answers, setAnswers] = useState<Answers>(EMPTY);
   const [done, setDone] = useState(false);
   const [ready, setReady] = useState(false);
@@ -1610,7 +1665,6 @@ export default function TradingSetupPage() {
       setAnswers={setAnswers}
       onFinish={() => {
         setDone(true);
-        router.push("/UserDashboard/dashboard");
       }}
     />
   );

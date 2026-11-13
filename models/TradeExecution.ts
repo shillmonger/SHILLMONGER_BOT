@@ -23,6 +23,11 @@ export interface ITradeExecution extends Document {
   chatId?: number;
   messageId?: number;
   signalId?: string;
+  /** Original Telegram symbol text (e.g. "XAUUSDm") */
+  symbol?: string;
+  groupName?: string;
+  /** Resolved order kind actually submitted: MARKET | LIMIT | STOP */
+  orderType?: string;
   epic: string;
   direction: TradeDirection;
   size: number;
@@ -57,6 +62,9 @@ const TradeExecutionSchema: Schema = new Schema(
     chatId: { type: Number },
     messageId: { type: Number },
     signalId: { type: String },
+    symbol: { type: String, default: null },
+    groupName: { type: String, default: null },
+    orderType: { type: String, default: null },
     epic: { type: String, required: true },
     direction: {
       type: String,

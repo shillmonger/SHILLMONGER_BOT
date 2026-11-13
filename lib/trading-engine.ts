@@ -1,19 +1,28 @@
 /**
  * Signal-driven trade execution engine (multi-user Capital.com).
  *
- * Pipeline per eligible user for one ingested Telegram signal:
+ * Pipeline per evaluated user for one ingested Telegram signal:
  *   bot running + automationEnabled + !emergencyStop
- *   -> user's broker connected -> instrument allowlist -> open-position
- *   limit -> session check -> risk sizing (bot risk% or admin lot-size
- *   rule) -> POST /positions (single attempt)
+ *   -> broker connected + active + demo/live environment
+ *   -> instrument allowlist -> admin balance-tier rules
+ *   -> open-position limit -> session check -> epic resolution
+ *   -> risk sizing (bot risk% or admin lot-size rule)
+ *   -> order-type resolution (MARKET / LIMIT / STOP / PENDING)
+ *   -> POST /positions OR POST /workingOrders (single attempt)
  *   -> GET /confirms/{dealReference} -> TradeExecution record.
  *
+ * Every evaluated user also gets a SignalEvaluation document recording
+ * whether they were eligible and, if not, which gate stopped them.
+ *
  * Hard rules:
- *   - A trade is 'open' ONLY after /confirms confirms it.
+ *   - Only XAUUSD (gold) signals are traded.
+ *   - A trade is 'open'/'pending' ONLY after /confirms confirms it.
  *   - Order submission is never blindly retried; uncertain outcomes are
  *     reconciled via the deal reference.
  *   - One execution per (userId, chatId, messageId) — unique index.
  *   - One user's failure never blocks another user's execution.
+ *   - A user with a resting working order never gets a second pending
+ *     order from the same or a later signal.
  */
 
 import connectDB from '@/lib/db';
@@ -23,13 +32,16 @@ import PositionLimit from '@/models/PositionLimit';
 import LotSizeManagement from '@/models/LotSizeManagement';
 import StopLossManagement from '@/models/StopLossManagement';
 import TPMatrix from '@/models/TPMatrix';
+import SignalEvaluation from '@/models/SignalEvaluation';
 import {
   getBroker,
   getSession,
   getPositions,
+  getOrders,
   getMarket,
   resolveEpic,
   createPosition,
+  createWorkingOrder,
   confirmPosition,
   CapitalApiError,
 } from '@/lib/capitalcom';
@@ -40,36 +52,102 @@ export interface IngestedSignal {
   symbol: string;
   direction: string;
   entry: number;
+  entry_high?: number | null;
+  entry_low?: number | null;
   stop_loss: number;
   take_profits: number[];
   order_type?: string;
   group_name?: string;
+  confidence?: number;
+  /** Ingest-side signal document id, when available */
+  _id?: unknown;
 }
 
 const MAX_CONFIRM_ATTEMPTS = 5;
 const CONFIRM_DELAY_MS = 1500;
+/** Working (pending) orders expire after this many days */
+const WORKING_ORDER_TTL_DAYS = 7;
+
+type OrderKind = 'MARKET' | 'LIMIT' | 'STOP';
 
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+/** We only trade gold — XAUUSD in any broker suffix form, or GOLD. */
+function isGoldSymbol(symbol: string | undefined): boolean {
+  const norm = (symbol || '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '');
+  return norm.startsWith('XAUUSD') || norm === 'GOLD';
+}
+
+/**
+ * Resolve the signal's order_type + entry vs the live quote into the
+ * order kind Capital.com should receive.
+ *
+ *   MARKET            -> immediate position
+ *   *_LIMIT / *_STOP  -> resting working order at signal.entry
+ *   PENDING / unknown -> auto-detect from current price:
+ *       BUY : entry < offer -> LIMIT, entry > offer -> STOP, else MARKET
+ *       SELL: entry > bid   -> LIMIT, entry < bid   -> STOP, else MARKET
+ *     No quote available -> LIMIT (resting at entry beats chasing market).
+ */
+function resolveOrderKind(
+  signal: IngestedSignal,
+  direction: 'BUY' | 'SELL',
+  bid?: number,
+  offer?: number
+): OrderKind {
+  const raw = (signal.order_type || '').toUpperCase();
+  if (raw.includes('LIMIT')) return 'LIMIT';
+  if (raw.includes('STOP')) return 'STOP';
+  if (raw === 'MARKET' || raw.includes('NOW')) return 'MARKET';
+
+  // PENDING / unspecified — auto-detect against the live quote.
+  const price = direction === 'BUY' ? offer ?? bid : bid ?? offer;
+  if (price === undefined || !Number.isFinite(price) || price <= 0) {
+    return 'LIMIT';
+  }
+  if (direction === 'BUY') {
+    if (signal.entry < price) return 'LIMIT';
+    if (signal.entry > price) return 'STOP';
+    return 'MARKET';
+  }
+  if (signal.entry > price) return 'LIMIT';
+  if (signal.entry < price) return 'STOP';
+  return 'MARKET';
+}
+
 interface ExecResult {
   executed: boolean;
+  eligible: boolean;
   reason?: string;
   dealReference?: string;
 }
 
 /**
- * Fan-out entry point: find every user whose bot is armed and execute the
- * signal independently for each. Called (fire-and-forget) by the ingest
- * route after a signal is stored.
+ * Fan-out entry point: find every armed user and evaluate the signal
+ * independently for each. Called (fire-and-forget) by the ingest route
+ * after a signal is stored.
  */
 export async function executeSignal(signal: IngestedSignal): Promise<void> {
   try {
+    // Gold-only mandate — skip fan-out entirely for other symbols.
+    if (!isGoldSymbol(signal.symbol)) {
+      console.log(
+        `[trading-engine] skipping non-gold signal ${signal.symbol} ` +
+          `(chat ${signal.chat_id} msg ${signal.message_id})`
+      );
+      return;
+    }
+
     await connectDB();
+    // Every running, non-emergency-stopped bot is EVALUATED — including
+    // automation-disabled ones, so the eligibility DB shows the full
+    // picture of who could/couldn't take the signal.
     const bots = await BotConfig.find({
       state: 'running',
-      automationEnabled: true,
       emergencyStop: { $ne: true },
     }).lean();
 
@@ -90,30 +168,53 @@ async function executeForUser(
   const userId = String(bot.userId);
   const env = bot.environment;
 
+  /** Record an ineligible outcome and return the ExecResult. */
+  const deny = async (
+    stage: string,
+    reason: string,
+    executionId?: string
+  ): Promise<ExecResult> => {
+    await recordEvaluation(userId, signal, {
+      environment: env,
+      eligible: false,
+      stage,
+      reason,
+      executionId,
+    });
+    return { executed: false, eligible: false, reason };
+  };
+
   try {
-    /* ---- Broker must be connected for THIS user ---- */
-    const broker = await getBroker(userId);
-    if (!broker || broker.connectionStatus !== 'connected') {
-      return { executed: false, reason: 'broker_not_connected' };
-    }
-    // Operator-disabled broker — never execute for this user.
-    if (broker.status === 'disabled') {
-      return { executed: false, reason: 'broker_disabled' };
+    /* ---- Bot-level gates ---- */
+    if (!bot.automationEnabled) {
+      return deny('bot_config', 'automation_disabled');
     }
 
-    /* ---- Instrument allowlist ---- */
+    /* ---- Broker must be connected + active for THIS user ---- */
+    const broker = await getBroker(userId);
+    if (!broker || broker.connectionStatus !== 'connected') {
+      return deny('broker', 'broker_not_connected');
+    }
+    if (broker.status === 'disabled') {
+      return deny('broker', 'broker_disabled');
+    }
+    if (broker.environment !== 'demo' && broker.environment !== 'live') {
+      return deny('broker', 'broker_invalid_environment');
+    }
+
+    /* ---- Instrument allowlist (bot-level, optional) ---- */
     const symbol = (signal.symbol || '').toUpperCase();
     if (bot.allowedInstruments.length > 0) {
       const allowed = bot.allowedInstruments.map((s) => s.toUpperCase());
       const norm = symbol.replace(/[^A-Z0-9]/g, '');
       if (!allowed.some((a) => a === symbol || a === norm)) {
-        return { executed: false, reason: 'instrument_not_allowed' };
+        return deny('instrument', 'instrument_not_allowed');
       }
     }
 
     const direction = signal.direction.toUpperCase();
     if (direction !== 'BUY' && direction !== 'SELL') {
-      return { executed: false, reason: 'invalid_direction' };
+      return deny('instrument', 'invalid_direction');
     }
 
     /* ---- Admin balance-tier rules (bot value 0 = defer to admin) ---- */
@@ -148,10 +249,10 @@ async function executeForUser(
       const posRes = await getPositions(userId, env);
       const openCount = posRes.data?.positions?.length ?? 0;
       if (maxPositions !== null && openCount >= maxPositions) {
-        return { executed: false, reason: 'max_open_positions' };
+        return deny('position_limit', 'max_open_positions');
       }
     } catch {
-      return { executed: false, reason: 'positions_unavailable' };
+      return deny('position_limit', 'positions_unavailable');
     }
 
     /* ---- Session check ---- */
@@ -159,13 +260,13 @@ async function executeForUser(
       await getSession(userId, env);
     } catch (e) {
       const msg = e instanceof CapitalApiError ? e.message : 'session_failed';
-      return { executed: false, reason: `session_error:${msg}` };
+      return deny('session', `session_error:${msg}`);
     }
 
     /* ---- Instrument resolution ---- */
     const epic = await resolveEpic(userId, signal.symbol, env);
     if (!epic) {
-      return { executed: false, reason: 'instrument_not_found' };
+      return deny('instrument_resolution', 'instrument_not_found');
     }
 
     /* ---- Instrument metadata + sizing ----
@@ -177,6 +278,8 @@ async function executeForUser(
     const maxSize = market?.maxDealSize ?? Number.MAX_SAFE_INTEGER;
     const increment = market?.dealSizeIncrement ?? minSize ?? 0.01;
     const contractSize = market?.contractSize ?? 1;
+    const bid = market?.snapshot?.bid;
+    const offer = market?.snapshot?.offer;
 
     const slDistance =
       slRule && slRule.stop_loss > 0
@@ -191,12 +294,12 @@ async function executeForUser(
       }
     } else {
       if (!lotRule || !(lotRule.lot_size > 0)) {
-        await recordExecution(userId, signal, {
+        const execId = await recordExecution(userId, signal, {
           env, epic, direction: direction as 'BUY' | 'SELL',
           size: 0, status: 'rejected', error: 'no_lot_size_rule_for_balance',
-        takeProfitLevel: tp1,
+          takeProfitLevel: tp1,
         });
-        return { executed: false, reason: 'no_lot_size_rule' };
+        return deny('sizing', 'no_lot_size_rule', execId);
       }
       size = Number(lotRule.lot_size);
     }
@@ -206,13 +309,13 @@ async function executeForUser(
     size = Math.min(size, maxSize);
 
     if (size <= 0 || size < minSize) {
-      await recordExecution(userId, signal, {
+      const execId = await recordExecution(userId, signal, {
         env, epic, direction: direction as 'BUY' | 'SELL',
         size: 0, status: 'rejected',
         error: `size_below_minimum (computed=${size}, min=${minSize})`,
         takeProfitLevel: tp1,
       });
-      return { executed: false, reason: 'size_below_minimum' };
+      return deny('sizing', 'size_below_minimum', execId);
     }
 
     // Effective stop level: admin SL distance overrides the signal SL.
@@ -223,7 +326,24 @@ async function executeForUser(
           : signal.entry + Number(slRule.stop_loss)
         : signal.stop_loss;
 
-    /* ---- Submit order — exactly once ---- */
+    /* ---- Order-type resolution ---- */
+    const orderKind = resolveOrderKind(
+      signal,
+      direction as 'BUY' | 'SELL',
+      bid,
+      offer
+    );
+
+    /* ---- Pending order path (LIMIT / STOP working orders) ---- */
+    if (orderKind !== 'MARKET') {
+      return submitWorkingOrder({
+        signal, bot, userId, env, epic,
+        direction: direction as 'BUY' | 'SELL',
+        size, stopLevel, tp1, orderKind,
+      });
+    }
+
+    /* ---- Market order — submit exactly once ---- */
     const submit = await createPosition(userId, {
       epic,
       direction: direction as 'BUY' | 'SELL',
@@ -234,54 +354,250 @@ async function executeForUser(
     }, env);
 
     if (!submit.ok || !submit.data?.dealReference) {
-      await recordExecution(userId, signal, {
+      const execId = await recordExecution(userId, signal, {
         env, epic, direction: direction as 'BUY' | 'SELL',
-        size, stopLevel, status: 'failed',
+        size, stopLevel, status: 'failed', orderType: 'MARKET',
         error: `submit_http_${submit.status}`,
         takeProfitLevel: tp1,
       });
-      return { executed: false, reason: 'submit_failed' };
+      await recordEvaluation(userId, signal, {
+        environment: env, eligible: true, stage: 'order_submit',
+        reason: `submit_http_${submit.status}`, executionId: execId,
+      });
+      return {
+        executed: false, eligible: true, reason: 'submit_failed',
+      };
     }
 
     const dealReference = submit.data.dealReference;
+    const { confirmed, dealId } = await confirmWithRetry(userId, dealReference, env);
 
-    /* ---- Confirm via deal reference — never trust the 200 ---- */
-    let confirmed = false;
-    let dealId: string | undefined;
-    for (let i = 0; i < MAX_CONFIRM_ATTEMPTS; i++) {
-      await sleep(CONFIRM_DELAY_MS);
-      const conf = await confirmPosition(userId, dealReference, env);
-      const status = conf.data?.dealConfirmation?.dealStatus;
-      const deals = conf.data?.dealConfirmation?.affectedDeals ?? [];
-      if (status === 'ACCEPTED' || deals.length > 0) {
-        confirmed = true;
-        dealId = deals[0]?.dealId;
-        break;
-      }
-      if (status === 'REJECTED' || status === 'FAILED') break;
-    }
-
-    await recordExecution(userId, signal, {
+    const execId = await recordExecution(userId, signal, {
       env, epic, direction: direction as 'BUY' | 'SELL',
       size, stopLevel, dealReference, dealId,
-      status: confirmed ? 'open' : 'submitted',
+      status: confirmed ? 'open' : 'submitted', orderType: 'MARKET',
       error: confirmed ? undefined : 'confirmation_pending',
       takeProfitLevel: tp1,
       confirmedAt: confirmed ? new Date() : undefined,
       openedAt: confirmed ? new Date() : undefined,
     });
 
+    await recordEvaluation(userId, signal, {
+      environment: env,
+      eligible: true,
+      stage: confirmed ? 'confirmed' : 'order_submit',
+      reason: confirmed ? undefined : 'confirmation_pending',
+      executionId: execId,
+    });
+
     return {
       executed: confirmed,
+      eligible: true,
       reason: confirmed ? undefined : 'confirmation_pending',
       dealReference,
     };
   } catch (e) {
     console.error(`[trading-engine] user ${userId} error:`, e);
-    return { executed: false, reason: 'internal_error' };
+    await recordEvaluation(userId, signal, {
+      environment: env, eligible: false, stage: 'internal',
+      reason: 'internal_error',
+    });
+    return { executed: false, eligible: false, reason: 'internal_error' };
   }
 }
 
+/**
+ * Place a resting LIMIT/STOP working order for a user.
+ * Blocked when the user already has ANY working order resting — one
+ * pending trade per user, per the product rule.
+ */
+async function submitWorkingOrder(args: {
+  signal: IngestedSignal;
+  bot: IBotConfig;
+  userId: string;
+  env: 'demo' | 'live';
+  epic: string;
+  direction: 'BUY' | 'SELL';
+  size: number;
+  stopLevel: number;
+  tp1?: number;
+  orderKind: 'LIMIT' | 'STOP';
+}): Promise<ExecResult> {
+  const { signal, userId, env, epic, direction, size, stopLevel, tp1, orderKind } = args;
+
+  const deny = async (stage: string, reason: string): Promise<ExecResult> => {
+    await recordEvaluation(userId, signal, {
+      environment: env, eligible: false, stage, reason,
+    });
+    return { executed: false, eligible: false, reason };
+  };
+
+  try {
+    /* ---- One pending trade per user ---- */
+    try {
+      const ordersRes = await getOrders(userId, env);
+      if (!ordersRes.ok) {
+        return deny('pending_order_check', 'orders_unavailable');
+      }
+      if ((ordersRes.data?.orders ?? []).length > 0) {
+        return deny('pending_order_check', 'pending_order_exists');
+      }
+    } catch {
+      return deny('pending_order_check', 'orders_unavailable');
+    }
+
+    /* ---- Submit working order — exactly once ---- */
+    const goodTillDate = new Date(
+      Date.now() + WORKING_ORDER_TTL_DAYS * 86400_000
+    ).toISOString();
+
+    const submit = await createWorkingOrder(userId, {
+      epic,
+      direction,
+      type: orderKind,
+      size,
+      level: signal.entry,
+      stopLevel,
+      profitLevel: tp1,
+      goodTillDate,
+    }, env);
+
+    const dealReference =
+      submit.data?.dealReference ?? submit.data?.workingOrder?.dealReference;
+
+    if (!submit.ok || !dealReference) {
+      const execId = await recordExecution(userId, signal, {
+        env, epic, direction, size, stopLevel,
+        status: 'failed', orderType: orderKind,
+        error: `submit_http_${submit.status}`,
+        takeProfitLevel: tp1,
+      });
+      await recordEvaluation(userId, signal, {
+        environment: env, eligible: true, stage: 'order_submit',
+        reason: `submit_http_${submit.status}`, executionId: execId,
+      });
+      return { executed: false, eligible: true, reason: 'submit_failed' };
+    }
+
+    const { confirmed, dealId } = await confirmWithRetry(userId, dealReference, env, true);
+
+    const execId = await recordExecution(userId, signal, {
+      env, epic, direction, size, stopLevel,
+      dealReference, dealId,
+      status: confirmed ? 'pending' : 'submitted',
+      orderType: orderKind,
+      error: confirmed ? undefined : 'confirmation_pending',
+      takeProfitLevel: tp1,
+      confirmedAt: confirmed ? new Date() : undefined,
+    });
+
+    await recordEvaluation(userId, signal, {
+      environment: env,
+      eligible: true,
+      stage: confirmed ? 'confirmed' : 'order_submit',
+      reason: confirmed ? undefined : 'confirmation_pending',
+      executionId: execId,
+    });
+
+    return {
+      executed: confirmed,
+      eligible: true,
+      reason: confirmed ? undefined : 'confirmation_pending',
+      dealReference,
+    };
+  } catch (e) {
+    console.error(`[trading-engine] pending order user ${userId} error:`, e);
+    await recordEvaluation(userId, signal, {
+      environment: env, eligible: false, stage: 'internal',
+      reason: 'internal_error',
+    });
+    return { executed: false, eligible: false, reason: 'internal_error' };
+  }
+}
+
+/**
+ * Poll GET /confirms/{dealReference} until the broker reports a terminal
+ * state. Handles BOTH confirmation envelopes: dealConfirmation (positions)
+ * and workingOrderConfirmation (working orders).
+ */
+async function confirmWithRetry(
+  userId: string,
+  dealReference: string,
+  env: 'demo' | 'live',
+  isWorkingOrder = false
+): Promise<{ confirmed: boolean; dealId?: string }> {
+  for (let i = 0; i < MAX_CONFIRM_ATTEMPTS; i++) {
+    await sleep(CONFIRM_DELAY_MS);
+    const conf = await confirmPosition(userId, dealReference, env);
+    const c =
+      conf.data?.dealConfirmation ?? conf.data?.workingOrderConfirmation;
+    const status = c?.dealStatus;
+    const deals = c?.affectedDeals ?? [];
+    const workingOrder = c?.workingOrder;
+
+    const accepted =
+      status === 'ACCEPTED' ||
+      deals.length > 0 ||
+      (isWorkingOrder && !!workingOrder);
+
+    if (accepted) {
+      return {
+        confirmed: true,
+        dealId:
+          deals[0]?.dealId ??
+          workingOrder?.workingOrderId ??
+          workingOrder?.dealId,
+      };
+    }
+    if (status === 'REJECTED' || status === 'FAILED') break;
+  }
+  return { confirmed: false };
+}
+
+/** Upsert the eligibility record for (signal, user). */
+async function recordEvaluation(
+  userId: string,
+  signal: IngestedSignal,
+  fields: {
+    environment: 'demo' | 'live';
+    eligible: boolean;
+    stage: string;
+    reason?: string;
+    executionId?: string;
+  }
+) {
+  try {
+    await connectDB();
+    await SignalEvaluation.updateOne(
+      {
+        signalChatId: signal.chat_id,
+        signalMessageId: signal.message_id,
+        userId,
+      },
+      {
+        $set: {
+          signalRefId:
+            signal._id !== undefined ? String(signal._id) : null,
+          environment: fields.environment,
+          symbol: signal.symbol ?? '',
+          direction: signal.direction ?? '',
+          groupName: signal.group_name ?? null,
+          orderType: signal.order_type ?? null,
+          eligible: fields.eligible,
+          stage: fields.stage,
+          reason: fields.reason ?? null,
+          executionId: fields.executionId ?? null,
+          evaluatedAt: new Date(),
+        },
+      },
+      { upsert: true }
+    );
+  } catch (e) {
+    console.error('[trading-engine] failed to record evaluation:', e);
+  }
+}
+
+/** Upsert the execution record; returns its _id for eligibility linking. */
 async function recordExecution(
   userId: string,
   signal: IngestedSignal,
@@ -292,19 +608,20 @@ async function recordExecution(
     size: number;
     stopLevel?: number;
     takeProfitLevel?: number;
-    status: 'open' | 'submitted' | 'rejected' | 'failed';
+    orderType?: string;
+    status: 'pending' | 'open' | 'submitted' | 'rejected' | 'failed';
     dealReference?: string;
     dealId?: string;
     error?: string;
     confirmedAt?: Date;
     openedAt?: Date;
   }
-) {
+): Promise<string | undefined> {
   try {
     await connectDB();
     // upsert keyed by (userId, chatId, messageId) — one record per user
     // per signal, enforced by the unique index.
-    await TradeExecution.updateOne(
+    const doc = await TradeExecution.findOneAndUpdate(
       { userId, chatId: signal.chat_id, messageId: signal.message_id },
       {
         $set: {
@@ -315,6 +632,10 @@ async function recordExecution(
           entryLevel: signal.entry,
           stopLevel: args.stopLevel ?? signal.stop_loss,
           takeProfitLevel: args.takeProfitLevel ?? signal.take_profits?.[0],
+          signalId: signal._id !== undefined ? String(signal._id) : null,
+          symbol: signal.symbol ?? null,
+          groupName: signal.group_name ?? null,
+          orderType: args.orderType ?? signal.order_type ?? null,
           dealReference: args.dealReference,
           dealId: args.dealId,
           status: args.status,
@@ -323,9 +644,11 @@ async function recordExecution(
           openedAt: args.openedAt ?? null,
         },
       },
-      { upsert: true }
+      { upsert: true, returnDocument: 'after' }
     );
+    return doc?._id ? String(doc._id) : undefined;
   } catch (e) {
     console.error('[trading-engine] failed to record execution:', e);
+    return undefined;
   }
 }
