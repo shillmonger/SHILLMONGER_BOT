@@ -73,6 +73,24 @@ interface DayPoint {
   value: number; // daily profit (USD)
 }
 
+/* Shape returned by /api/user/trading/executions (TRADE_EXECUTIONS docs) */
+interface ExecDoc {
+  _id: string;
+  dealId?: string | null;
+  symbol?: string | null;
+  epic?: string | null;
+  direction?: "BUY" | "SELL" | null;
+  entryLevel?: number | null;
+  size?: number | null;
+  environment?: "demo" | "live" | null;
+  status?: string | null;
+  realizedPnl?: number | null;
+  unrealizedPnl?: number | null;
+  openedAt?: string | null;
+  closedAt?: string | null;
+  createdAt?: string | null;
+}
+
 type Mode = "demo" | "live";
 
 interface DashboardData {
@@ -195,37 +213,92 @@ function shortDate(date: string) {
   }).format(new Date(date));
 }
 
-// Deterministic mock series so the chart looks the same on every load.
-// Replace with real daily results from your trading API.
-function generateSeries(
-  seed: number,
-  days: number,
-  min: number,
-  max: number,
-): DayPoint[] {
-  let s = seed;
-  const rand = () => {
-    s |= 0;
-    s = (s + 0x6d2b79f5) | 0;
-    let t = Math.imul(s ^ (s >>> 15), 1 | s);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-
-  const DAY = 24 * 60 * 60 * 1000;
-  const now = Date.now();
-
-  return Array.from({ length: days }, (_, i) => ({
-    date: new Date(now - (days - 1 - i) * DAY).toISOString(),
-    value: Math.round((min + rand() * (max - min)) * 100) / 100,
-  }));
-}
-
 const IMPACT_CLS: Record<CalendarItem["impact"], string> = {
   High: "text-rose-600 dark:text-rose-400",
   Medium: "text-amber-600 dark:text-amber-400",
   Low: "text-muted-foreground",
 };
+
+/* ───────── Real-data mappers (TRADE_EXECUTIONS) ───────── */
+
+const EXEC_TERMINAL_BAD = new Set(["failed", "cancelled", "rejected"]);
+const EXEC_OPEN = new Set(["open", "pending", "submitted"]);
+
+function execProfit(e: ExecDoc): number {
+  return EXEC_OPEN.has(e.status ?? "")
+    ? (e.unrealizedPnl ?? 0)
+    : (e.realizedPnl ?? 0);
+}
+
+function execTimestamp(e: ExecDoc): string {
+  return e.closedAt ?? e.openedAt ?? e.createdAt ?? new Date(0).toISOString();
+}
+
+function toRecentTrade(e: ExecDoc): TradeRow {
+  const profit = execProfit(e);
+  const open = EXEC_OPEN.has(e.status ?? "");
+  return {
+    id: (e.dealId ?? e._id).slice(-8).toUpperCase(),
+    symbol: e.symbol || e.epic || "—",
+    type: e.direction === "SELL" ? "SELL" : "BUY",
+    entry: e.entryLevel ?? 0,
+    lotSize: e.size ?? 0,
+    date: execTimestamp(e),
+    profit,
+    status: open ? "OPEN" : profit >= 0 ? "WIN" : "LOSS",
+  };
+}
+
+/** Daily realized P/L per environment, starting at the user's first
+ *  execution (never before) and capped at `days` back. */
+function buildPerformanceSeries(
+  execs: ExecDoc[],
+  days = 90,
+): Record<Mode, DayPoint[]> {
+  const DAY = 24 * 60 * 60 * 1000;
+  const now = Date.now();
+  const earliestAllowed = now - (days - 1) * DAY;
+
+  // First day the user ever executed — the axis must not show days
+  // before trading started.
+  const firstTrade = execs.reduce((min, e) => {
+    const t = Date.parse(e.createdAt ?? e.openedAt ?? e.closedAt ?? "");
+    return Number.isFinite(t) && t < min ? t : min;
+  }, Infinity);
+  const firstDay = Number.isFinite(firstTrade)
+    ? Math.floor(firstTrade / DAY) * DAY
+    : earliestAllowed;
+  const start = Math.max(earliestAllowed, firstDay);
+  const count = Math.max(
+    1,
+    Math.min(days, Math.floor((now - start) / DAY) + 1)
+  );
+
+  const buckets: Record<Mode, Map<string, number>> = {
+    demo: new Map(),
+    live: new Map(),
+  };
+
+  for (const e of execs) {
+    const env = e.environment === "live" ? "live" : "demo";
+    const pnl = execProfit(e);
+    if (!pnl) continue;
+    const t = Date.parse(execTimestamp(e));
+    if (!Number.isFinite(t) || t < start) continue;
+    const key = new Date(t).toISOString().slice(0, 10);
+    buckets[env].set(key, (buckets[env].get(key) ?? 0) + pnl);
+  }
+
+  const out = {} as Record<Mode, DayPoint[]>;
+  for (const mode of ["demo", "live"] as Mode[]) {
+    out[mode] = Array.from({ length: count }, (_, i) => {
+      const date = new Date(start + i * DAY);
+      const key = date.toISOString().slice(0, 10);
+      return { date: date.toISOString(), value: buckets[mode].get(key) ?? 0 };
+    });
+  }
+  return out;
+}
 
 /* ───────────────── Building blocks ───────────────── */
 
@@ -365,28 +438,49 @@ function NewsRow({ item }: { item: NewsItem }) {
 
 /* ───────────────── Interactive bar chart (Demo / Live) ───────────────── */
 
-type Level = "low" | "medium" | "high";
+type Period = "7" | "30" | "90";
 
-const LEVEL_META: Record<Level, { label: string; bar: string; dot: string; text: string }> = {
-  low: {
-    label: "Low",
-    bar: "bg-red-500",
-    dot: "bg-red-500",
-    text: "text-red-600 dark:text-red-400",
-  },
-  medium: {
-    label: "Medium",
-    bar: "bg-amber-500",
-    dot: "bg-amber-500",
-    text: "text-amber-600 dark:text-amber-400",
-  },
-  high: {
-    label: "High",
+function Segmented<T extends string>({ options, value, onChange }: { options: { key: T; label: string }[]; value: T; onChange: (v: T) => void }) {
+  return (
+    <div className="inline-flex rounded-xl border border-border/60 bg-muted/20 p-1">
+      {options.map((o) => (
+        <button
+          key={o.key} type="button" onClick={() => onChange(o.key)} aria-pressed={value === o.key}
+          className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+            value === o.key ? "bg-gradient-to-r from-violet-600 to-purple-600 text-white shadow" : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+const TONE_META = {
+  profit: {
+    label: "Profit",
     bar: "bg-emerald-500",
     dot: "bg-emerald-500",
     text: "text-emerald-600 dark:text-emerald-400",
   },
-};
+  loss: {
+    label: "Loss",
+    bar: "bg-red-500",
+    dot: "bg-red-500",
+    text: "text-red-600 dark:text-red-400",
+  },
+  flat: {
+    label: "No activity",
+    bar: "bg-zinc-400/40",
+    dot: "bg-zinc-400",
+    text: "text-muted-foreground",
+  },
+} as const;
+
+type Tone = keyof typeof TONE_META;
+const toneOf = (value: number): Tone =>
+  value > 0 ? "profit" : value < 0 ? "loss" : "flat";
 
 function PerformanceBarChart({
   series,
@@ -394,6 +488,7 @@ function PerformanceBarChart({
   series: Record<Mode, DayPoint[]>;
 }) {
   const [mode, setMode] = useState<Mode>("demo");
+  const [period, setPeriod] = useState<Period>("90");
   const [active, setActive] = useState<number | null>(null);
   const [compact, setCompact] = useState(false);
 
@@ -410,7 +505,11 @@ function PerformanceBarChart({
     };
   }, []);
 
-  const points = series[mode];
+  // Window the full 90-day series to the selected period.
+  const points = useMemo(
+    () => series[mode].slice(-Number(period)),
+    [series, mode, period]
+  );
 
   // On mobile keep roughly every Nth point (~15 bars max) so each bar stays
   // readable; desktop renders the full daily series.
@@ -424,26 +523,19 @@ function PerformanceBarChart({
 
   const totals = useMemo(
     () => ({
-      demo: series.demo.reduce((sum, p) => sum + p.value, 0),
-      live: series.live.reduce((sum, p) => sum + p.value, 0),
+      demo: series.demo.slice(-Number(period)).reduce((sum, p) => sum + p.value, 0),
+      live: series.live.slice(-Number(period)).reduce((sum, p) => sum + p.value, 0),
     }),
-    [series],
+    [series, period],
   );
 
-  const { min, max } = useMemo(() => {
-    const values = points.map((p) => p.value);
-    return { min: Math.min(...values), max: Math.max(...values) };
+  const maxAbs = useMemo(() => {
+    const values = points.map((p) => Math.abs(p.value));
+    return Math.max(...values, 0);
   }, [points]);
 
-  const levelOf = (value: number): Level => {
-    const ratio = (value - min) / (max - min || 1);
-    if (ratio < 0.34) return "low";
-    if (ratio < 0.67) return "medium";
-    return "high";
-  };
-
   const activePoint = active !== null ? displayPoints[active] : null;
-  const activeLevel = activePoint ? levelOf(activePoint.value) : null;
+  const activeTone = activePoint ? toneOf(activePoint.value) : null;
 
   const tabs: { key: Mode; label: string }[] = [
     { key: "demo", label: "Demo" },
@@ -459,8 +551,20 @@ function PerformanceBarChart({
             Trading Performance
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Showing daily profit for the last 3 months
+            Showing daily profit for the last {period} days
           </p>
+        </div>
+
+        <div className="flex items-center justify-center px-4 py-3 sm:px-6">
+          <Segmented<Period>
+            value={period}
+            onChange={setPeriod}
+            options={[
+              { key: "7", label: "7D" },
+              { key: "30", label: "30D" },
+              { key: "90", label: "90D" },
+            ]}
+          />
         </div>
 
         <div className="grid grid-cols-2 border-t border-border/60 sm:border-t-0">
@@ -516,8 +620,8 @@ function PerformanceBarChart({
           {/* bars */}
           <div className="absolute inset-0 flex items-end">
             {displayPoints.map((p, i) => {
-              const level = levelOf(p.value);
-              const height = Math.max(4, (p.value / (max || 1)) * 100);
+              const tone = toneOf(p.value);
+              const height = Math.max(4, (Math.abs(p.value) / (maxAbs || 1)) * 100);
               const dimmed = active !== null && active !== i;
               return (
                 <div
@@ -527,7 +631,7 @@ function PerformanceBarChart({
                   onClick={() => setActive(i)}
                 >
                   <div
-                    className={`w-full rounded-t-[2px] transition-all duration-200 ${LEVEL_META[level].bar} ${
+                    className={`w-full rounded-t-[2px] transition-all duration-200 ${TONE_META[tone].bar} ${
                       dimmed ? "opacity-40" : "opacity-100"
                     }`}
                     style={{ height: `${height}%` }}
@@ -538,7 +642,7 @@ function PerformanceBarChart({
           </div>
 
           {/* tooltip */}
-          {activePoint && activeLevel && active !== null && (
+          {activePoint && activeTone && active !== null && (
             <div
               className="pointer-events-none absolute top-0 z-10 w-36 -translate-x-1/2 rounded-xl border border-violet-500/30 bg-popover px-3 py-2 text-popover-foreground shadow-xl shadow-violet-900/20"
               style={{
@@ -549,15 +653,16 @@ function PerformanceBarChart({
                 {formatDate(activePoint.date)}
               </p>
               <p className="mt-0.5 text-sm font-extrabold tabular-nums">
+                {activePoint.value >= 0 ? "+" : "-"}
                 {formatCurrency(activePoint.value)}
               </p>
               <p
-                className={`mt-0.5 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider ${LEVEL_META[activeLevel].text}`}
+                className={`mt-0.5 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider ${TONE_META[activeTone].text}`}
               >
                 <span
-                  className={`h-1.5 w-1.5 rounded-full ${LEVEL_META[activeLevel].dot}`}
+                  className={`h-1.5 w-1.5 rounded-full ${TONE_META[activeTone].dot}`}
                 />
-                {LEVEL_META[activeLevel].label}
+                {TONE_META[activeTone].label}
               </p>
             </div>
           )}
@@ -582,10 +687,10 @@ function PerformanceBarChart({
 
         {/* legend */}
         <div className="mt-3 flex flex-wrap items-center justify-center gap-x-5 gap-y-1.5 text-[11px] font-semibold text-muted-foreground">
-          {(["low", "medium", "high"] as Level[]).map((l) => (
+          {(["profit", "loss", "flat"] as Tone[]).map((l) => (
             <span key={l} className="flex items-center gap-1.5">
-              <span className={`h-2.5 w-2.5 rounded-sm ${LEVEL_META[l].dot}`} />
-              {LEVEL_META[l].label}
+              <span className={`h-2.5 w-2.5 rounded-sm ${TONE_META[l].dot}`} />
+              {TONE_META[l].label}
             </span>
           ))}
         </div>
@@ -628,13 +733,16 @@ export default function DashboardPage() {
     try {
       if (showRefresh) setRefreshing(true);
 
-      const [response, news, calendar] = await Promise.all([
+      const [response, news, calendar, execRes] = await Promise.all([
         fetch("/api/user/info", {
           method: "GET",
           cache: "no-store",
         }),
         fetchDashboardNews(),
         fetchDashboardCalendar(),
+        fetch("/api/user/trading/executions?limit=500", { cache: "no-store" }).catch(
+          () => null
+        ),
       ]);
 
       if (!response.ok) {
@@ -642,16 +750,30 @@ export default function DashboardPage() {
       }
 
       const userData = await response.json();
+      const execPayload = execRes?.ok ? await execRes.json().catch(() => ({})) : {};
+      const execs: ExecDoc[] = Array.isArray(execPayload?.executions)
+        ? execPayload.executions
+        : [];
 
       if (userData.success) {
-        // Replace this object with the response from your trading API.
-        // billing = amount billed, credits = credit balance (sample values).
+        const tradeExecs = execs.filter((e) => !EXEC_TERMINAL_BAD.has(e.status ?? ""));
+        const recentTrades = [...tradeExecs]
+          .sort((a, b) => Date.parse(execTimestamp(b)) - Date.parse(execTimestamp(a)))
+          .slice(0, 6)
+          .map(toRecentTrade);
+
+        const closedPnl = execs
+          .filter((e) => e.status === "closed")
+          .map((e) => e.realizedPnl ?? 0);
+        const totalProfit = closedPnl.filter((p) => p > 0).reduce((s, p) => s + p, 0);
+        const totalLosses = closedPnl.filter((p) => p < 0).reduce((s, p) => s + p, 0);
+
         setData({
-          totalTrades: 9,
+          totalTrades: tradeExecs.length,
           billing: 30,
           credits: 120,
-          totalProfit: 15.5,
-          totalLosses: -32.1,
+          totalProfit,
+          totalLosses,
           activePlan: {
             name: "STANDARD PLAN",
             amount: 20,
@@ -660,22 +782,11 @@ export default function DashboardPage() {
             expires: "2026-08-04",
             status: "APPROVED",
           },
-          // Sample daily profit for the last 90 days: wire to your real demo / live results.
-          performance: {
-            demo: generateSeries(7, 90, 20, 400),
-            live: generateSeries(21, 90, 5, 220),
-          },
+          performance: buildPerformanceSeries(execs),
           tradingCalendar: calendar.items,
           calendarAttribution: calendar.attribution,
           news,
-          recentTrades: [
-            { id: "TRD-001", symbol: "XAUUSDm", type: "BUY", entry: 4388.23, lotSize: 0.05, date: "2026-08-13", profit: 125.5, status: "WIN" },
-            { id: "TRD-002", symbol: "XAUUSDm", type: "SELL", entry: 4388.71, lotSize: 0.05, date: "2026-08-13", profit: -45.3, status: "LOSS" },
-            { id: "TRD-003", symbol: "XAUUSDm", type: "SELL", entry: 4426.15, lotSize: 0.02, date: "2026-08-12", profit: 78.25, status: "WIN" },
-            { id: "TRD-004", symbol: "XAUUSDm", type: "BUY", entry: 4430.74, lotSize: 0.02, date: "2026-08-12", profit: -32.1, status: "LOSS" },
-            { id: "TRD-005", symbol: "XAUUSDm", type: "BUY", entry: 4405.72, lotSize: 0.02, date: "2026-08-12", profit: 56.8, status: "WIN" },
-            { id: "TRD-006", symbol: "XAUUSDm", type: "BUY", entry: 4405.72, lotSize: 0.02, date: "2026-08-12", profit: 12.4, status: "WIN" },
-          ],
+          recentTrades,
         });
       }
     } catch (error) {
@@ -900,7 +1011,7 @@ export default function DashboardPage() {
               </CardDescription>
             </div>
 
-            <Link href="/user-dashboard/trading">
+            <Link href="/UserDashboard/trade-history">
               <Button
                 variant="outline"
                 size="sm"

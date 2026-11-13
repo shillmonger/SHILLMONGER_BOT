@@ -1,7 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { ArrowDownRight, ArrowUpRight } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  ArrowDownRight,
+  ArrowUpRight,
+  Percent,
+  Repeat,
+  TrendingDown,
+  TrendingUp,
+} from "lucide-react";
 import { IBM_Plex_Mono } from "next/font/google";
 
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
@@ -80,6 +87,34 @@ const toTrade = (e: ExecutionDoc): Trade => {
 const TH = "px-4 py-3 text-left text-[10px] font-bold uppercase tracking-widest text-muted-foreground";
 const TD = "px-4 py-3.5 text-sm font-medium tabular-nums";
 
+function MiniStat({
+  icon,
+  label,
+  value,
+  tone,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  tone: string;
+}) {
+  return (
+    <div className="group rounded-2xl border border-violet-500/20 bg-card p-3 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-violet-500/50 hover:shadow-lg hover:shadow-violet-900/10">
+      <div className="flex items-start justify-between">
+        <span className={`flex h-8 w-8 items-center justify-center rounded-lg transition-transform duration-300 group-hover:scale-110 ${tone}`}>
+          {icon}
+        </span>
+      </div>
+      <p className="mt-2 text-xl font-extrabold tracking-tight tabular-nums font-mono">
+        {value}
+      </p>
+      <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        {label}
+      </p>
+    </div>
+  );
+}
+
 const DirTag = ({ dir }: { dir: "BUY" | "SELL" }) => (
   <span className={`inline-flex items-center gap-1 text-xs font-bold uppercase tracking-wider ${dir === "BUY" ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>
     {dir === "BUY" ? <ArrowUpRight className="h-3.5 w-3.5" /> : <ArrowDownRight className="h-3.5 w-3.5" />}
@@ -135,6 +170,17 @@ export default function TradeHistoryPage() {
     return () => { cancelled = true; };
   }, []);
 
+  const stats = useMemo(() => {
+    const closed = trades.filter((t) => t.status === "WIN" || t.status === "LOSS");
+    const wins = closed.filter((t) => t.status === "WIN").length;
+    const losses = closed.length - wins;
+    const profit = closed.reduce((s, t) => s + Math.max(t.pl, 0), 0);
+    const loss = closed.reduce((s, t) => s + Math.min(t.pl, 0), 0);
+    const winRate = wins + losses > 0 ? Math.round((wins / (wins + losses)) * 100) : 0;
+    const total = trades.filter((t) => t.status !== "FAILED").length;
+    return { total, profit, loss, winRate };
+  }, [trades]);
+
   const rows = trades.filter((t) =>
     filter === "all" ? true : filter === "winning" ? t.status === "WIN" : filter === "losing" ? t.status === "LOSS" : filter === "open" ? t.status === "OPEN" : t.status !== "OPEN");
 
@@ -157,6 +203,33 @@ export default function TradeHistoryPage() {
             All your executed trades and positions.
           </p>
         </div>
+
+        <section className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <MiniStat
+            icon={<Repeat className="h-4 w-4" />}
+            label="Total Trades"
+            value={String(stats.total)}
+            tone="bg-violet-500/15 text-violet-600 dark:text-violet-400"
+          />
+          <MiniStat
+            icon={<TrendingUp className="h-4 w-4" />}
+            label="Total Profit"
+            value={`${stats.profit >= 0 ? "+" : ""}${money(stats.profit)}`}
+            tone="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+          />
+          <MiniStat
+            icon={<TrendingDown className="h-4 w-4" />}
+            label="Total Loss"
+            value={stats.loss < 0 ? `-${money(stats.loss)}` : money(0)}
+            tone="bg-rose-500/15 text-rose-600 dark:text-rose-400"
+          />
+          <MiniStat
+            icon={<Percent className="h-4 w-4" />}
+            label="Win Rate"
+            value={`${stats.winRate}%`}
+            tone="bg-fuchsia-500/15 text-fuchsia-600 dark:text-fuchsia-400"
+          />
+        </section>
 
         <Card className="gap-0 overflow-hidden border-violet-500/20 p-0 shadow-sm">
           <CardHeader className="flex flex-col gap-3 space-y-0 py-4 sm:flex-row sm:items-center sm:justify-between">
