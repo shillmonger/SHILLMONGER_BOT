@@ -6,7 +6,8 @@ export type TradeExecutionStatus =
   | 'open'
   | 'rejected'
   | 'failed'
-  | 'closed';
+  | 'closed'
+  | 'cancelled';
 
 export type TradeDirection = 'BUY' | 'SELL';
 export type TradeEnvironment = 'demo' | 'live';
@@ -79,7 +80,7 @@ const TradeExecutionSchema: Schema = new Schema(
     dealId: { type: String },
     status: {
       type: String,
-      enum: ['pending', 'submitted', 'open', 'rejected', 'failed', 'closed'],
+      enum: ['pending', 'submitted', 'open', 'rejected', 'failed', 'closed', 'cancelled'],
       default: 'pending',
     },
     error: { type: String, default: null },
