@@ -39,6 +39,7 @@ import {
   getPositions,
   getOrders,
   getMarket,
+  getPrice,
   resolveEpic,
   createPosition,
   createWorkingOrder,
@@ -282,8 +283,27 @@ async function executeForUser(
     const maxSize = market?.maxDealSize ?? Number.MAX_SAFE_INTEGER;
     const increment = market?.dealSizeIncrement ?? minSize ?? 0.01;
     const contractSize = market?.contractSize ?? 1;
-    const bid = market?.snapshot?.bid;
-    const offer = market?.snapshot?.offer;
+
+    /* ---- Live quote for order-type resolution ----
+     * marketDetails.snapshot is not reliably populated — the dedicated
+     * /prices endpoint is. Only needed when the signal isn't explicitly
+     * MARKET; market orders don't care about the quote. */
+    const rawOrderType = (signal.order_type || '').toUpperCase();
+    const needsQuote =
+      rawOrderType !== 'MARKET' && !rawOrderType.includes('NOW');
+    let bid = market?.snapshot?.bid;
+    let offer = market?.snapshot?.offer;
+    if (needsQuote) {
+      try {
+        const priceRes = await getPrice(userId, epic, env);
+        const snap =
+          priceRes.data?.prices?.snapshot ?? priceRes.data?.snapshot;
+        if (snap?.bid !== undefined) bid = snap.bid;
+        if (snap?.offer !== undefined) offer = snap.offer;
+      } catch {
+        // Quote fetch failed — fall back to whatever /markets gave us.
+      }
+    }
 
     const slDistance =
       slRule && slRule.stop_loss > 0

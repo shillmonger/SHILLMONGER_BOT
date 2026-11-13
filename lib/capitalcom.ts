@@ -420,6 +420,28 @@ export async function searchMarkets(userId: string, searchTerm: string, env?: Br
   );
 }
 
+export interface CapitalPriceSnapshot {
+  bid?: number;
+  offer?: number;
+  marketStatus?: string;
+  updateTimeUTC?: string;
+}
+
+/**
+ * GET /api/v1/prices/{epic} — live quote. marketDetails from /markets does
+ * NOT reliably include snapshot bid/offer; this endpoint does.
+ */
+export async function getPrice(
+  userId: string,
+  epic: string,
+  env?: BrokerEnvironment
+) {
+  return capitalRequest<{
+    prices?: { snapshot?: CapitalPriceSnapshot };
+    snapshot?: CapitalPriceSnapshot;
+  }>(userId, 'GET', `/prices/${encodeURIComponent(epic)}`, { env });
+}
+
 export interface CreatePositionParams {
   epic: string;
   direction: 'BUY' | 'SELL';
