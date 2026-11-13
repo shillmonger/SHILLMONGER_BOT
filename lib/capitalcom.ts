@@ -263,12 +263,20 @@ export async function capitalRequest<T = unknown>(
       return attempt(true);
     }
 
+    const text = await res.text();
     if (!res.ok) {
-      return { ok: false, status: res.status, data: null };
+      // Surface the broker's error body so callers can record WHY a
+      // request was rejected (e.g. invalid goodTillDate format).
+      let errData: unknown = null;
+      try {
+        errData = text ? JSON.parse(text) : null;
+      } catch {
+        errData = text ? { error: text.slice(0, 300) } : null;
+      }
+      return { ok: false, status: res.status, data: errData as T | null };
     }
 
     let data: T | null = null;
-    const text = await res.text();
     if (text) {
       try {
         data = JSON.parse(text) as T;

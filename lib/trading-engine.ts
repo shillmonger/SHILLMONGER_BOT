@@ -343,7 +343,7 @@ async function executeForUser(
       return submitWorkingOrder({
         signal, bot, userId, env, epic,
         direction: direction as 'BUY' | 'SELL',
-        size, stopLevel, tp1, orderKind,
+        size, stopLevel, tp1, orderKind, bid, offer,
       });
     }
 
@@ -358,15 +358,20 @@ async function executeForUser(
     }, env);
 
     if (!submit.ok || !submit.data?.dealReference) {
+      const brokerError =
+        typeof submit.data === 'object' && submit.data !== null
+          ? JSON.stringify(submit.data).slice(0, 300)
+          : '';
       const execId = await recordExecution(userId, signal, {
         env, epic, direction: direction as 'BUY' | 'SELL',
         size, stopLevel, status: 'failed', orderType: 'MARKET',
-        error: `submit_http_${submit.status}`,
+        error: `submit_http_${submit.status}${brokerError ? ` ${brokerError}` : ''}`,
         takeProfitLevel: tp1,
       });
       await recordEvaluation(userId, signal, {
         environment: env, eligible: true, stage: 'order_submit',
-        reason: `submit_http_${submit.status}`, executionId: execId,
+        reason: `submit_http_${submit.status}${brokerError ? ` ${brokerError}` : ''}`,
+        executionId: execId,
       });
       return {
         executed: false, eligible: true, reason: 'submit_failed',
@@ -426,8 +431,10 @@ async function submitWorkingOrder(args: {
   stopLevel: number;
   tp1?: number;
   orderKind: 'LIMIT' | 'STOP';
+  bid?: number;
+  offer?: number;
 }): Promise<ExecResult> {
-  const { signal, userId, env, epic, direction, size, stopLevel, tp1, orderKind } = args;
+  const { signal, userId, env, epic, direction, size, stopLevel, tp1, orderKind, bid, offer } = args;
 
   const deny = async (stage: string, reason: string): Promise<ExecResult> => {
     await recordEvaluation(userId, signal, {
@@ -460,10 +467,34 @@ async function submitWorkingOrder(args: {
       return deny('pending_order_check', 'orders_unavailable');
     }
 
-    /* ---- Submit working order — exactly once ---- */
-    const goodTillDate = new Date(
-      Date.now() + WORKING_ORDER_TTL_DAYS * 86400_000
-    ).toISOString();
+    /* ---- Level must sit on the correct side of the market ----
+     * LIMIT buys trigger BELOW the offer, LIMIT sells ABOVE the bid;
+     * STOPs are the mirror image. A wrong-side level is an HTTP 400. */
+    const level = signal.entry;
+    const refBid = bid ?? offer;
+    const refOffer = offer ?? bid;
+    if (refBid !== undefined && refOffer !== undefined) {
+      const wrongSide =
+        (orderKind === 'LIMIT' &&
+          ((direction === 'BUY' && level >= refOffer) ||
+            (direction === 'SELL' && level <= refBid))) ||
+        (orderKind === 'STOP' &&
+          ((direction === 'BUY' && level <= refOffer) ||
+            (direction === 'SELL' && level >= refBid)));
+      if (wrongSide) {
+        return deny(
+          'order_submit',
+          `level_wrong_side (${orderKind} ${direction} @ ${level}, bid=${refBid} offer=${refOffer})`
+        );
+      }
+    }
+
+    /* ---- Submit working order — exactly once ----
+     * Capital.com requires goodTillDate as YYYY-MM-DDTHH:MM:SS (UTC,
+     * no milliseconds, no trailing Z) — toISOString() produces
+     * "...42.716Z" which the API rejects with HTTP 400. */
+    const expiry = new Date(Date.now() + WORKING_ORDER_TTL_DAYS * 86400_000);
+    const goodTillDate = expiry.toISOString().slice(0, 19);
 
     const submit = await createWorkingOrder(userId, {
       epic,
@@ -480,15 +511,21 @@ async function submitWorkingOrder(args: {
       submit.data?.dealReference ?? submit.data?.workingOrder?.dealReference;
 
     if (!submit.ok || !dealReference) {
+      // Broker error bodies now carry the rejection reason — keep it.
+      const brokerError =
+        typeof submit.data === 'object' && submit.data !== null
+          ? JSON.stringify(submit.data).slice(0, 300)
+          : '';
       const execId = await recordExecution(userId, signal, {
         env, epic, direction, size, stopLevel,
         status: 'failed', orderType: orderKind,
-        error: `submit_http_${submit.status}`,
+        error: `submit_http_${submit.status}${brokerError ? ` ${brokerError}` : ''}`,
         takeProfitLevel: tp1,
       });
       await recordEvaluation(userId, signal, {
         environment: env, eligible: true, stage: 'order_submit',
-        reason: `submit_http_${submit.status}`, executionId: execId,
+        reason: `submit_http_${submit.status}${brokerError ? ` ${brokerError}` : ''}`,
+        executionId: execId,
       });
       return { executed: false, eligible: true, reason: 'submit_failed' };
     }
