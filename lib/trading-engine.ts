@@ -244,15 +244,19 @@ async function executeForUser(
         ? bot.maxOpenPositions
         : posRule?.max_positions ?? null;
 
-    /* ---- Open-position limit ---- */
-    try {
-      const posRes = await getPositions(userId, env);
-      const openCount = posRes.data?.positions?.length ?? 0;
-      if (maxPositions !== null && openCount >= maxPositions) {
-        return deny('position_limit', 'max_open_positions');
+    /* ---- Open-position limit ----
+     * Only call the broker when a limit actually applies — no configured
+     * limit means the check can't fail and the API call is wasted. */
+    if (maxPositions !== null) {
+      try {
+        const posRes = await getPositions(userId, env);
+        const openCount = posRes.data?.positions?.length ?? 0;
+        if (openCount >= maxPositions) {
+          return deny('position_limit', 'max_open_positions');
+        }
+      } catch {
+        return deny('position_limit', 'positions_unavailable');
       }
-    } catch {
-      return deny('position_limit', 'positions_unavailable');
     }
 
     /* ---- Session check ---- */

@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
 import connectDB from '@/lib/db';
 import mongoose from 'mongoose';
 import {
@@ -16,6 +16,8 @@ import {
  * Deduplication relies on the unique (chat_id, message_id) index that the
  * Python service creates on the shared `signals` collection.
  */
+export const maxDuration = 120;
+
 export async function POST(request: Request) {
   try {
     const secret = process.env.WORKER_HMAC_SECRET;
@@ -103,14 +105,21 @@ export async function POST(request: Request) {
     try {
       const result = await collection.insertOne(doc);
 
-      // Kick off personal-bot execution for the stored signal. Runs
-      // asynchronously — the ingest ack must not wait for broker I/O, and
-      // the engine performs its own eligibility/risk checks. Duplicate
-      // executions are impossible (unique chatId+messageId index).
+      // Kick off personal-bot execution for the stored signal. `after()`
+      // keeps the serverless function alive until the engine finishes —
+      // a bare fire-and-forget promise can be frozen/killed by the
+      // platform once the response is sent. The engine performs its own
+      // eligibility/risk checks; duplicate executions are impossible
+      // (unique chatId+messageId index).
       const stored = { ...doc, _id: result.insertedId };
-      import('@/lib/trading-engine')
-        .then(({ executeSignal }) => executeSignal(stored))
-        .catch((e) => console.error('[ingest] trading engine error:', e));
+      after(async () => {
+        try {
+          const { executeSignal } = await import('@/lib/trading-engine');
+          await executeSignal(stored);
+        } catch (e) {
+          console.error('[ingest] trading engine error:', e);
+        }
+      });
 
       return NextResponse.json({
         status: 'stored',
