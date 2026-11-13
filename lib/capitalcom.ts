@@ -590,6 +590,11 @@ export interface CapitalActivity {
   [key: string]: unknown;
   epic?: string;
   dealId?: string;
+  source?: string;
+  /** With detailed=true, direction/level/size live under `details` */
+  details?: Record<string, unknown>;
+  date?: string;
+  dateUTC?: string;
   direction?: string;
   size?: number;
   level?: number;
@@ -681,34 +686,103 @@ export async function getHistoryActivity(
   return { ok, status: ok ? 200 : lastStatus, data: merged };
 }
 
+/* Account transactions history (/history/transactions) — this is where
+ * realized P/L lives. Closed trades appear as transactionType 'TRADE'
+ * with note 'Trade closed' and fields: openLevel, closeLevel, size,
+ * currency, cash, pnl (values are strings on the wire). */
 export interface CapitalTransaction {
   [key: string]: unknown;
   transactionId?: string;
   type?: string;
+  transactionType?: string;
   amount?: number;
   currency?: string;
   createdDate?: string;
+  date?: string;
+  dateUtc?: string;
+  dateUTC?: string;
+  instrumentName?: string;
+  note?: string;
+  reference?: string;
+  size?: string | number;
+  status?: string;
+  openLevel?: string | number;
+  closeLevel?: string | number;
+  cash?: string | number;
+  pnl?: string | number;
 }
 
 export interface CapitalTransactionsResponse {
   transactions?: CapitalTransaction[];
 }
 
+/**
+ * GET /history/transactions — account transaction history.
+ * from/to ranges are chunked into <=1-day windows (same API limit as
+ * activity history) and merged.
+ */
 export async function getTransactions(
   userId: string,
-  params: { from?: string; to?: string } = {},
+  params: {
+    from?: string;
+    to?: string;
+    /** e.g. 'TRADE' */
+    type?: string;
+    lastPeriod?: number;
+  } = {},
   env?: BrokerEnvironment
 ) {
-  const qs = new URLSearchParams();
-  if (params.from) qs.set('from', params.from);
-  if (params.to) qs.set('to', params.to);
-  const suffix = qs.toString() ? `?${qs.toString()}` : '';
-  return capitalRequest<CapitalTransactionsResponse>(
-    userId,
-    'GET',
-    `/history/transactions${suffix}`,
-    { env, timeoutMs: 20000 }
-  );
+  const DAY_MS = 86400_000;
+
+  const baseParams = new URLSearchParams();
+  if (params.type) baseParams.set('type', params.type);
+  if (params.lastPeriod !== undefined) {
+    baseParams.set('lastPeriod', String(Math.min(params.lastPeriod, 86400)));
+  }
+
+  const fromMs = params.from ? Date.parse(params.from) : NaN;
+  const toMs = params.to ? Date.parse(params.to) : Date.now();
+  const hasRange =
+    Number.isFinite(fromMs) && Number.isFinite(toMs) && toMs > fromMs;
+
+  if (params.lastPeriod !== undefined || !hasRange) {
+    const suffix = baseParams.toString() ? `?${baseParams.toString()}` : '';
+    return capitalRequest<CapitalTransactionsResponse>(
+      userId,
+      'GET',
+      `/history/transactions${suffix}`,
+      { env, timeoutMs: 20000 }
+    );
+  }
+
+  const merged: CapitalTransactionsResponse = { transactions: [] };
+  let lastStatus = 200;
+  let ok = true;
+  let cursor = fromMs;
+  while (cursor < toMs) {
+    const end = Math.min(cursor + DAY_MS, toMs);
+    const qs = new URLSearchParams(baseParams);
+    qs.set('from', new Date(cursor).toISOString().slice(0, 19));
+    qs.set('to', new Date(end).toISOString().slice(0, 19));
+    const res = await capitalRequest<CapitalTransactionsResponse>(
+      userId,
+      'GET',
+      `/history/transactions?${qs.toString()}`,
+      { env, timeoutMs: 20000 }
+    );
+    lastStatus = res.status;
+    if (!res.ok) {
+      ok = false;
+      cursor = end;
+      continue;
+    }
+    merged.transactions = [
+      ...(merged.transactions ?? []),
+      ...(res.data?.transactions ?? []),
+    ];
+    cursor = end;
+  }
+  return { ok, status: ok ? 200 : lastStatus, data: merged };
 }
 
 /** DELETE /positions/{dealId} — closes the FULL position for that deal. */

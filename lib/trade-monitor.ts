@@ -31,9 +31,11 @@ import {
   getOrders,
   getPositions,
   getHistoryActivity,
+  getTransactions,
   confirmPosition,
   type CapitalActivity,
   type CapitalPositionEntry,
+  type CapitalTransaction,
   type CapitalWorkingOrder,
 } from '@/lib/capitalcom';
 
@@ -119,6 +121,8 @@ function positionOpenedAt(p: CapitalPositionEntry): Date | undefined {
 function activityTime(a: CapitalActivity): number {
   const raw =
     (a.closedDate as string | undefined) ??
+    a.dateUTC ??
+    a.date ??
     a.createdDateUTC ??
     a.createdDate ??
     '';
@@ -143,18 +147,68 @@ function activityMatchesExec(a: CapitalActivity, exec: ExecDoc): boolean {
   }
   const epic = typeof a.epic === 'string' ? a.epic.toUpperCase() : '';
   if (!exec.epic || epic !== exec.epic.toUpperCase()) return false;
-  const dir = typeof a.direction === 'string' ? a.direction.toUpperCase() : '';
+  // detailed=true nests direction/level/size under `details`.
+  const d = asRecord(a.details);
+  const dirRaw = a.direction ?? d.direction;
+  const dir = typeof dirRaw === 'string' ? dirRaw.toUpperCase() : '';
   if (exec.direction && dir && dir !== exec.direction) return false;
+  const lvlRaw = a.level ?? d.level;
+  const lvl = typeof lvlRaw === 'number' ? lvlRaw : toNumber(lvlRaw);
   if (
     exec.entryLevel != null &&
-    typeof a.level === 'number' &&
-    Math.abs(a.level - exec.entryLevel) > 2
+    lvl != null &&
+    Math.abs(lvl - exec.entryLevel) > 2
   ) {
     return false;
   }
   if (exec.openedAt) {
     const t = activityTime(a);
     if (t > 0 && t < new Date(exec.openedAt).getTime() - 10 * 60_000) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function toNumber(v: unknown): number | null {
+  const n = typeof v === 'number' ? v : typeof v === 'string' ? parseFloat(v) : NaN;
+  return Number.isFinite(n) ? n : null;
+}
+
+function transactionTime(t: CapitalTransaction): number {
+  const raw = t.dateUtc ?? t.dateUTC ?? t.date ?? '';
+  const ms = Date.parse(String(raw));
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+/**
+ * Does this TRADE transaction correspond to this execution?
+ * Transactions have no dealId — match on instrument + size + open level
+ * + timestamp after the position opened.
+ */
+function transactionMatchesExec(t: CapitalTransaction, exec: ExecDoc): boolean {
+  const type = String(t.transactionType ?? '').toUpperCase();
+  const note = String(t.note ?? '').toLowerCase();
+  if (type !== 'TRADE' && !note.includes('closed') && !note.includes('trade')) {
+    return false;
+  }
+  const inst = String(t.instrumentName ?? '').toUpperCase();
+  if (exec.epic && inst && inst !== exec.epic.toUpperCase() &&
+      !inst.includes(exec.epic.toUpperCase())) {
+    return false;
+  }
+  const size = toNumber(t.size);
+  if (exec.size != null && size != null && Math.abs(size - exec.size) > 0.001) {
+    return false;
+  }
+  const openLevel = toNumber(t.openLevel);
+  if (exec.entryLevel != null && openLevel != null &&
+      Math.abs(openLevel - exec.entryLevel) > 2) {
+    return false;
+  }
+  if (exec.openedAt) {
+    const tt = transactionTime(t);
+    if (tt > 0 && tt < new Date(exec.openedAt).getTime() - 10 * 60_000) {
       return false;
     }
   }
@@ -271,6 +325,27 @@ async function syncGroup(
     return historyCache;
   };
 
+  // Transaction history carries realized P/L ('pnl' on TRADE entries).
+  let txCache: CapitalTransaction[] | null = null;
+  const getTxnHistory = async (): Promise<CapitalTransaction[]> => {
+    if (txCache) return txCache;
+    const earliest = execs.reduce((min, e) => {
+      const t = new Date(e.openedAt ?? e.createdAt ?? Date.now()).getTime();
+      return Number.isFinite(t) && t < min ? t : min;
+    }, Date.now());
+    const res = await getTransactions(
+      userId,
+      {
+        from: new Date(earliest - 3600_000).toISOString(),
+        to: new Date().toISOString(),
+        type: 'TRADE',
+      },
+      env
+    );
+    txCache = res.ok ? (res.data?.transactions ?? []) : [];
+    return txCache;
+  };
+
   for (const exec of execs) {
     summary.checked += 1;
     try {
@@ -281,7 +356,7 @@ async function syncGroup(
       } else if (exec.status === 'open' || exec.status === 'closed') {
         // 'closed' only reaches here when realizedPnl is null (retry
         // window above) — reconcileOpen re-checks history and backfills.
-        await reconcileOpen(exec, positions, getHistory, summary);
+        await reconcileOpen(exec, positions, getHistory, getTxnHistory, summary);
       }
     } catch (e) {
       summary.errors += 1;
@@ -393,6 +468,7 @@ async function reconcileOpen(
   exec: ExecDoc,
   positions: CapitalPositionEntry[],
   getHistory: () => Promise<CapitalActivity[]>,
+  getTransactions: () => Promise<CapitalTransaction[]>,
   summary: MonitorSummary
 ) {
   const openPos = positions.find(
@@ -412,11 +488,14 @@ async function reconcileOpen(
     return;
   }
 
-  // Position is gone — find the closing activity for realized P/L.
-  // The close deal carries its OWN dealId, so match on any deal-id-ish
-  // field or epic+direction+level+time, then prefer the candidate that
-  // actually carries a P/L figure (the OPEN activity also matches ids).
-  const history = await getHistory();
+  // Position is gone — it closed. Realized P/L comes from
+  // /history/transactions (TRADE entries carry 'pnl'); activity history
+  // is the fallback for the close timestamp.
+  const [txns, history] = await Promise.all([getTransactions(), getHistory()]);
+  const closeTxn = txns
+    .filter((t) => transactionMatchesExec(t, exec))
+    .sort((x, y) => transactionTime(y) - transactionTime(x))[0];
+
   const candidates = history
     .filter((a) => activityMatchesExec(a, exec))
     .sort((x, y) => activityTime(y) - activityTime(x));
@@ -426,11 +505,21 @@ async function reconcileOpen(
     ) ??
     candidates[0] ??
     null;
-  const pnl = close?.profit ?? close?.profitLoss;
+
+  const txnPnl = closeTxn ? toNumber(closeTxn.pnl) : null;
+  const pnl = txnPnl ?? close?.profit ?? close?.profitLoss ?? null;
+
   const closedAtRaw =
-    close?.closedDate ?? close?.createdDateUTC ?? close?.createdDate;
+    (closeTxn?.dateUtc ?? closeTxn?.dateUTC ?? closeTxn?.date) ??
+    (close?.closedDate as string | undefined) ??
+    close?.dateUTC ??
+    close?.date ??
+    close?.createdDateUTC ??
+    close?.createdDate;
   const parsed =
-    typeof closedAtRaw === 'string' ? new Date(closedAtRaw) : new Date();
+    typeof closedAtRaw === 'string' || typeof closedAtRaw === 'number'
+      ? new Date(closedAtRaw)
+      : new Date();
   const closedAt = Number.isNaN(parsed.getTime()) ? new Date() : parsed;
 
   await markState(exec, 'closed', {
