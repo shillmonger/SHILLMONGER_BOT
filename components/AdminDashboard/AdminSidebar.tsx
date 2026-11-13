@@ -24,6 +24,7 @@ import {
   MailSearch,
   CircleGauge,
   Scale,
+  Bookmark,
   TriangleAlert,
   X,
 } from "lucide-react";
@@ -94,9 +95,10 @@ export default function AdminSidebar({
       name: "Bot Settings",
       icon: Settings,
       children: [
+        { name: "Lot size", icon: Scale, href: `${basePath}/BotSettings/lot-size` },
+        { name: "Stop lose", icon: TriangleAlert, href: `${basePath}/BotSettings/stop-loss` },
+        { name: "TP Matrix", icon: Bookmark, href: `${basePath}/BotSettings/tp-matrix` },
         { name: "Position Limits", icon: CircleGauge, href: `${basePath}/BotSettings/position-limits` },
-        { name: "Lot size Config", icon: Scale, href: `${basePath}/BotSettings/lot-size` },
-        { name: "Stop lose Config", icon: TriangleAlert, href: `${basePath}/BotSettings/stop-loss` },
       ],
     },
     { name: "Trade Signals", icon: ChartColumn, href: `${basePath}/signals` },
@@ -110,7 +112,7 @@ export default function AdminSidebar({
       ],
     },
     { name: "User Management", icon: UsersRound, href: `${basePath}/user-management` },
-    { name: "Switch back 2 User", icon: Lock, href: `/UserDashboard/dashboard` },
+    { name: "Switch to Trader", icon: Lock, href: `/UserDashboard/dashboard` },
   ];
 
   useEffect(() => {

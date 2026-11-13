@@ -22,6 +22,7 @@ import TradeExecution from '@/models/TradeExecution';
 import PositionLimit from '@/models/PositionLimit';
 import LotSizeManagement from '@/models/LotSizeManagement';
 import StopLossManagement from '@/models/StopLossManagement';
+import TPMatrix from '@/models/TPMatrix';
 import {
   getBroker,
   getSession,
@@ -124,11 +125,18 @@ async function executeForUser(
       min_balance: { $lte: equity },
       max_balance: { $gte: equity },
     };
-    const [posRule, lotRule, slRule] = await Promise.all([
+    const [posRule, lotRule, slRule, tpRule] = await Promise.all([
       PositionLimit.findOne(balanceQuery).lean(),
       LotSizeManagement.findOne(balanceQuery).lean(),
       StopLossManagement.findOne(balanceQuery).lean(),
+      TPMatrix.findOne(balanceQuery).lean(),
     ]);
+
+    /* TP matrix picks which take-profit from the signal to use
+     * (tp_level 1 = take_profits[0]). Falls back to TP1. */
+    const tpIndex = tpRule ? tpRule.tp_level - 1 : 0;
+    const tp1 =
+      signal.take_profits?.[tpIndex] ?? signal.take_profits?.[0];
 
     const maxPositions =
       bot.maxOpenPositions > 0
@@ -186,6 +194,7 @@ async function executeForUser(
         await recordExecution(userId, signal, {
           env, epic, direction: direction as 'BUY' | 'SELL',
           size: 0, status: 'rejected', error: 'no_lot_size_rule_for_balance',
+        takeProfitLevel: tp1,
         });
         return { executed: false, reason: 'no_lot_size_rule' };
       }
@@ -201,6 +210,7 @@ async function executeForUser(
         env, epic, direction: direction as 'BUY' | 'SELL',
         size: 0, status: 'rejected',
         error: `size_below_minimum (computed=${size}, min=${minSize})`,
+        takeProfitLevel: tp1,
       });
       return { executed: false, reason: 'size_below_minimum' };
     }
@@ -214,7 +224,6 @@ async function executeForUser(
         : signal.stop_loss;
 
     /* ---- Submit order — exactly once ---- */
-    const tp1 = signal.take_profits?.[0];
     const submit = await createPosition(userId, {
       epic,
       direction: direction as 'BUY' | 'SELL',
@@ -229,6 +238,7 @@ async function executeForUser(
         env, epic, direction: direction as 'BUY' | 'SELL',
         size, stopLevel, status: 'failed',
         error: `submit_http_${submit.status}`,
+        takeProfitLevel: tp1,
       });
       return { executed: false, reason: 'submit_failed' };
     }
@@ -256,6 +266,7 @@ async function executeForUser(
       size, stopLevel, dealReference, dealId,
       status: confirmed ? 'open' : 'submitted',
       error: confirmed ? undefined : 'confirmation_pending',
+      takeProfitLevel: tp1,
       confirmedAt: confirmed ? new Date() : undefined,
       openedAt: confirmed ? new Date() : undefined,
     });
@@ -280,6 +291,7 @@ async function recordExecution(
     direction: 'BUY' | 'SELL';
     size: number;
     stopLevel?: number;
+    takeProfitLevel?: number;
     status: 'open' | 'submitted' | 'rejected' | 'failed';
     dealReference?: string;
     dealId?: string;
@@ -302,7 +314,7 @@ async function recordExecution(
           size: args.size,
           entryLevel: signal.entry,
           stopLevel: args.stopLevel ?? signal.stop_loss,
-          takeProfitLevel: signal.take_profits?.[0],
+          takeProfitLevel: args.takeProfitLevel ?? signal.take_profits?.[0],
           dealReference: args.dealReference,
           dealId: args.dealId,
           status: args.status,
