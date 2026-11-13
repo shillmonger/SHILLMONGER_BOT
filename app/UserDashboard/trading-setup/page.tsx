@@ -1,12 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { IBM_Plex_Mono } from "next/font/google";
 import { Bar, BarChart, CartesianGrid, Cell, ReferenceLine, XAxis } from "recharts";
 import {
   AlertTriangle, ArrowDownRight, ArrowLeft, ArrowRight, ArrowUpRight,
-  BarChart3, Bot, Check, Eye, EyeOff, KeyRound, LayoutDashboard, LineChart, Link2,
+  BarChart3, Bot, Check, Eye, EyeOff, KeyRound, Landmark, LayoutDashboard, LineChart, Link2,
   Loader2, Lock, Mail, Percent, Settings, ShieldAlert, SlidersHorizontal,
   TrendingDown, TrendingUp, Trophy, Wallet,
 } from "lucide-react";
@@ -110,6 +111,23 @@ interface ApiTrade {
 }
 interface AnalyticsDaily { date: string; value: number }
 
+interface ApiBrokerStatus {
+  connected: boolean;
+  status: string;
+  /** false when the operator disabled the broker in the Danger Zone */
+  active?: boolean;
+  environment: Mode;
+  email: string | null;
+  account: {
+    accountId?: string; accountName?: string; currency?: string | null;
+    balance?: number | null; available?: number | null; equity?: number | null;
+    profitLoss?: number | null; accountType?: string | null;
+  } | null;
+  connectionError: string | null;
+  lastConnectedAt: string | null;
+  lastSessionRefreshAt: string | null;
+}
+
 interface TradingData {
   loading: boolean;
   error: string | null;
@@ -125,6 +143,7 @@ interface TradingData {
   losses: number;
   botState: BotState;
   emergencyStop: boolean;
+  broker: ApiBrokerStatus | null;
   refresh: () => void;
   setBot: (s: BotState) => Promise<void>;
   setEmergencyStop: (v: boolean) => Promise<void>;
@@ -199,6 +218,7 @@ function useTradingData(environment: Mode): TradingData {
   const [losses, setLosses] = useState(0);
   const [botState, setBotState] = useState<BotState>("stopped");
   const [emergencyStop, setEmergencyStopState] = useState(false);
+  const [broker, setBroker] = useState<ApiBrokerStatus | null>(null);
   const [tick, setTick] = useState(0);
 
   const refresh = useCallback(() => setTick((t) => t + 1), []);
@@ -209,7 +229,7 @@ function useTradingData(environment: Mode): TradingData {
       setLoading(true);
       setError(null);
       try {
-        const [dash, pos, hist, ana, bot] = await Promise.all([
+        const [dash, pos, hist, ana, bot, brk] = await Promise.all([
           apiGet<{
             environment?: Mode; source?: TradingData["source"]; account?: { balance?: number } | null;
             summary?: ApiSummary; bot?: { state?: BotState; emergencyStop?: boolean; environment?: Mode } | null;
@@ -223,6 +243,7 @@ function useTradingData(environment: Mode): TradingData {
           apiGet<{ bot?: { state?: BotState; emergencyStop?: boolean; environment?: Mode } | null }>(
             "/api/user/trading/bot"
           ).catch(() => ({ bot: null })),
+          apiGet<ApiBrokerStatus>("/api/user/capital/status").catch(() => null),
         ]);
         if (cancelled) return;
 
@@ -240,6 +261,7 @@ function useTradingData(environment: Mode): TradingData {
         if (bs) setBotState(bs as BotState);
         const es = bot.bot?.emergencyStop ?? dash.bot?.emergencyStop;
         if (typeof es === "boolean") setEmergencyStopState(es);
+        setBroker(brk);
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load trading data");
       } finally {
@@ -273,7 +295,7 @@ function useTradingData(environment: Mode): TradingData {
 
   return {
     loading, error, source, environment, connected, summary, positions, trades,
-    daily, winRate, wins, losses, botState, emergencyStop,
+    daily, winRate, wins, losses, botState, emergencyStop, broker,
     refresh, setBot, setEmergencyStop, setEnvironment,
   };
 }
@@ -378,7 +400,7 @@ function SecretInput({
           {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
         </button>
       </div>
-      {hint && <p className="text-[11px] text-muted-foreground">{hint}</p>}
+      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
     </div>
   );
 }
@@ -407,12 +429,20 @@ function CapitalConnectForm({ env, onSuccess }: { env: Mode; onSuccess?: () => v
       if (!res.ok || data.connected === false) throw new Error(data.error || data.message || "Could not connect. Check your details and try again.");
       setStatus("success");
       setMessage("Capital.com account connected.");
+      toast.success(
+        `Capital.com account connected (${env === "demo" ? "demo" : "live"})`,
+        { id: "capital-connect" }
+      );
       // Never keep credentials in the browser after submitting.
       setEmail(""); setApiKey(""); setApiPassword("");
       onSuccess?.();
     } catch (err) {
+      const msg = err instanceof Error ? err.message : "Something went wrong. Try again.";
       setStatus("error");
-      setMessage(err instanceof Error ? err.message : "Something went wrong. Try again.");
+      setMessage(msg);
+      toast.error(`Could not connect Capital.com account — ${msg}`, {
+        id: "capital-connect",
+      });
     }
   };
 
@@ -465,11 +495,11 @@ function CapitalConnectForm({ env, onSuccess }: { env: Mode; onSuccess?: () => v
       <Button
         type="submit"
         disabled={!canSubmit}
-        className="h-10 w-full gap-2 rounded-xl bg-gradient-to-r from-violet-600 to-purple-600 text-sm font-bold text-white shadow-lg shadow-violet-900/30 hover:from-violet-500 hover:to-purple-500"
+        className="h-11 w-full gap-2 rounded-xl bg-gradient-to-r from-violet-600 to-purple-600 text-sm font-bold text-white shadow-lg shadow-violet-900/30 hover:from-violet-500 hover:to-purple-500"
       >
         {status === "loading" ? <><Loader2 className="h-4 w-4 animate-spin" /> Connecting</> : "Connect account"}
       </Button>
-      <p className="text-center text-[11px] text-muted-foreground">
+      <p className="text-center text-xs text-muted-foreground">
         Your details are sent securely to our server and are not saved in your browser.
       </p>
     </form>
@@ -513,7 +543,7 @@ function CapitalGuide({ env }: { env: Mode }) {
           <img src={CAPITAL_LOGO} alt="Capital.com" className="h-12 w-12 rounded-xl object-cover" />
         }
       />
-      <p className="text-center text-[11px] text-muted-foreground">{DISCLAIMER}</p>
+      <p className="text-center text-xs text-muted-foreground">{DISCLAIMER}</p>
       <CapitalConnectForm env={env} />
       <ApiSteps />
     </div>
@@ -663,7 +693,7 @@ function TableShell({ children, min = 760 }: { children: React.ReactNode; min?: 
     </div>
   );
 }
-const TH = "px-3 py-2 text-left text-[10px] font-bold uppercase tracking-widest text-muted-foreground";
+const TH = "px-3 py-2 text-left text-[11px] font-bold uppercase tracking-widest text-muted-foreground";
 const TD = "px-3 py-2 text-sm font-medium tabular-nums";
 
 const DirTag = ({ dir }: { dir: "BUY" | "SELL" }) => (
@@ -677,7 +707,7 @@ function PositionsTable({ positions, loading, connected, env }: { positions: Pos
   return (
     <Card className="gap-0 overflow-hidden border-violet-500/20 p-0 shadow-sm">
       <CardHeader className="flex flex-row items-center justify-between space-y-0 py-4">
-        <CardTitle className="text-xl font-bold">Open Positions</CardTitle>
+        <CardTitle className="text-xl font-extrabold tracking-tight">Open Positions</CardTitle>
         <SampleBadge
           text={connected ? `CAPITAL.COM · ${env.toUpperCase()}` : "NOT CONNECTED"}
           tone={env === "live" ? "green" : "amber"}
@@ -688,13 +718,18 @@ function PositionsTable({ positions, loading, connected, env }: { positions: Pos
           <Loader2 className="h-5 w-5 animate-spin" /> Loading positions…
         </div>
       ) : positions.length === 0 ? (
-        <div className="flex flex-col items-center justify-center gap-1 py-12 text-center">
-          <p className="text-sm font-bold text-muted-foreground">
-            {connected ? "No open positions" : "Broker not connected"}
-          </p>
-          <p className="text-[11px] text-muted-foreground">
-            {connected ? "Open positions from Capital.com will appear here." : "Connect your Capital.com account in Trading Setup to see real positions."}
-          </p>
+        <div className="flex flex-col items-center justify-center gap-3 py-14 text-center">
+          <span className="flex h-14 w-14 items-center justify-center rounded-2xl border border-violet-500/20 bg-violet-500/10 text-violet-500">
+            <LineChart className="h-7 w-7" />
+          </span>
+          <div className="space-y-1">
+            <p className="text-sm font-extrabold text-muted-foreground">
+              {connected ? "No open positions" : "Broker not connected"}
+            </p>
+            <p className="text-sm text-muted-foreground">
+              {connected ? "Open positions from Capital.com will appear here." : "Connect your Capital.com account in Trading Setup to see real positions."}
+            </p>
+          </div>
         </div>
       ) : (
       <TableShell min={900}>
@@ -746,8 +781,8 @@ function ToggleRow({ label, desc, on, onToggle }: { label: string; desc: string;
   return (
     <div className="flex items-center justify-between gap-3 rounded-xl border border-border/60 bg-muted/20 px-3 py-2.5">
       <div className="min-w-0">
-        <p className="truncate text-sm font-bold">{label}</p>
-        <p className="truncate text-[11px] text-muted-foreground">{desc}</p>
+        <p className="truncate text-sm font-extrabold">{label}</p>
+        <p className="truncate text-xs text-muted-foreground">{desc}</p>
       </div>
       <Toggle on={on} onClick={onToggle} label={label} />
     </div>
@@ -755,24 +790,19 @@ function ToggleRow({ label, desc, on, onToggle }: { label: string; desc: string;
 }
 
 function BotControl({
-  a, credits, bot, setBot, env, onEnv, statusNote,
-}: { a: Answers; credits: number; bot: BotState; setBot: (b: BotState) => void; env: Mode; onEnv: (m: Mode) => void; statusNote?: string }) {
-  const rows = [
-    ["Pair", "XAU/USD"],
-    ["Level", a.experience || "Not set"],
-    ["Credits", String(credits)],
-  ];
+  bot, setBot, env, onEnv, statusNote,
+}: { bot: BotState; setBot: (b: BotState) => void; env: Mode; onEnv: (m: Mode) => void; statusNote?: string }) {
   return (
     <Card className="gap-3 border-violet-500/20 py-4 shadow-sm">
       <CardHeader className="flex flex-row items-center justify-between space-y-0 px-4">
-        <CardTitle className="flex items-center gap-2 text-lg font-bold"><Bot className="h-4 w-4 text-violet-500" /> Bot Control</CardTitle>
+        <CardTitle className="flex items-center gap-2 text-lg font-extrabold tracking-tight"><Bot className="h-4 w-4 text-violet-500" /> Bot Control</CardTitle>
         <SampleBadge
           text={statusNote ? `BACKEND LINKED · ${env.toUpperCase()}` : "PREFERENCE ONLY"}
           tone={env === "live" ? "green" : "amber"}
         />
       </CardHeader>
       <CardContent className="space-y-3 px-4">
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           <ToggleRow
             label="Live Account"
             desc="Trade with real funds"
@@ -798,15 +828,172 @@ function BotControl({
             onToggle={() => setBot(bot === "paused" ? "running" : "paused")}
           />
         </div>
-        <div className="grid grid-cols-3 gap-2">
+        <p className="text-xs text-muted-foreground">{statusNote ?? "Automation preference only — order execution requires a connected broker."}</p>
+      </CardContent>
+    </Card>
+  );
+}
+
+/* ───────────────── Broker account (from BROKER collection) ───────────────── */
+
+function BrokerAccount({ broker }: { broker: ApiBrokerStatus | null }) {
+  const env = broker?.environment ?? "demo";
+  const connected = broker?.connected === true;
+  const acc = broker?.account ?? null;
+  const currency = acc?.currency ?? "";
+  const fmt = (v?: number | null) =>
+    v == null
+      ? "—"
+      : `${v < 0 ? "-" : ""}${Math.abs(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${currency ? ` ${currency}` : ""}`;
+
+  const rows: [string, string][] = [
+    ["Broker", "Capital.com"],
+    ["Account email", broker?.email ?? "—"],
+    ["Account", acc?.accountName ?? acc?.accountId ?? "—"],
+    ["Equity", fmt(acc?.equity)],
+    ["Unrealized P/L", acc?.profitLoss == null ? "—" : signed(acc.profitLoss)],
+    ["Status", connected ? "Connected" : broker?.status === "error" ? "Error" : "Not connected"],
+    ["Activation", broker?.active === false ? "Disabled" : "Active"],
+    ["Last connected", broker?.lastConnectedAt ? new Date(broker.lastConnectedAt).toLocaleString() : "—"],
+    ["Session refreshed", broker?.lastSessionRefreshAt ? new Date(broker.lastSessionRefreshAt).toLocaleString() : "—"],
+  ];
+
+  return (
+    <Card className="gap-3 border-violet-500/20 py-4 shadow-sm">
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 px-4">
+        <CardTitle className="flex items-center gap-2 text-lg font-extrabold tracking-tight">
+          <Landmark className="h-4 w-4 text-violet-500" /> Broker Account
+        </CardTitle>
+        <SampleBadge
+          text={connected ? `CONNECTED · ${env.toUpperCase()}` : "NOT CONNECTED"}
+          tone={connected && env === "live" ? "green" : "amber"}
+        />
+      </CardHeader>
+      <CardContent className="space-y-3 px-4">
+        {broker?.connectionError && (
+          <div className="flex items-start gap-2 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs font-semibold text-rose-600 dark:text-rose-300">
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span className="break-all">{broker.connectionError}</span>
+          </div>
+        )}
+        {!broker && (
+          <p className="text-xs text-muted-foreground">No broker connection found for your account.</p>
+        )}
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
           {rows.map(([k, v]) => (
             <div key={k} className="rounded-lg border border-border/60 bg-muted/20 px-3 py-2">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{k}</p>
-              <p className="mt-0.5 truncate text-sm font-bold" title={v}>{v}</p>
+              <p className="text-[11px] font-semibold  tracking-wider text-muted-foreground">{k}</p>
+              <p className="mt-0.5 truncate text-xs font-bold" title={v}>{v}</p>
             </div>
           ))}
         </div>
-        <p className="text-xs text-muted-foreground">{statusNote ?? "Automation preference only — order execution requires a connected broker."}</p>
+        <p className="text-xs text-muted-foreground">
+          Read-only view of your stored broker record. Credentials and session tokens are never sent to the browser.
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+/* ───────────────── Danger zone (broker activation + deletion) ───────────────── */
+
+function DangerZone({ broker, onChanged }: { broker: ApiBrokerStatus | null; onChanged?: () => void }) {
+  const router = useRouter();
+  const [confirmText, setConfirmText] = useState("");
+  const [busy, setBusy] = useState<"toggle" | "delete" | null>(null);
+  const hasBroker = !!broker?.email;
+  const active = broker?.active !== false;
+  const canDelete = hasBroker && confirmText.trim() === "DELETE" && busy === null;
+
+  const setActivation = async (v: boolean) => {
+    setBusy("toggle");
+    try {
+      await apiSend("/api/user/capital/manage", "PUT", { active: v });
+      toast.success(v ? "Broker activated" : "Broker disabled — no new trades will execute");
+      onChanged?.();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to update broker status");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const deleteBroker = async () => {
+    if (!canDelete) return;
+    setBusy("delete");
+    try {
+      await apiSend("/api/user/capital/manage", "DELETE");
+      toast.success("Broker account and bot configuration deleted");
+      setConfirmText("");
+      // Reset onboarding answers so the user can start over, then leave.
+      try { localStorage.removeItem(STORAGE_KEY); } catch { /* ignore */ }
+      onChanged?.();
+      router.push("/UserDashboard/dashboard");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to delete broker data");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <Card className="gap-3 border-rose-500/30 py-4 shadow-sm">
+      <CardHeader className="px-4">
+        <CardTitle className="flex items-center gap-2 text-lg font-extrabold tracking-tight text-rose-600 dark:text-rose-400">
+          <ShieldAlert className="h-4 w-4" /> Danger Zone
+        </CardTitle>
+        <CardDescription>
+          Control whether your broker connection can execute trades, or permanently remove it.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4 px-4">
+        {!hasBroker ? (
+          <p className="text-xs text-muted-foreground">No broker connected — connect a Capital.com account above first.</p>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <ToggleRow
+                label="Active"
+                desc="Allow the bot to trade"
+                on={active}
+                onToggle={() => void setActivation(true)}
+              />
+              <ToggleRow
+                label="Disabled"
+                desc="Block all trade execution"
+                on={!active}
+                onToggle={() => void setActivation(false)}
+              />
+            </div>
+
+            <div className="space-y-2 rounded-xl border border-rose-500/30 bg-rose-500/5 p-3">
+              <p className="text-xs font-semibold text-rose-600 dark:text-rose-400">
+                Delete broker connection
+              </p>
+              <p className="text-xs text-muted-foreground">
+                This permanently deletes your stored Capital.com credentials, session tokens,
+                account snapshot, and bot configuration. Type <span className={`${plexMono.className} font-bold`}>DELETE</span> to confirm.
+              </p>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <input
+                  type="text"
+                  value={confirmText}
+                  onChange={(e) => setConfirmText(e.target.value)}
+                  placeholder="Type DELETE"
+                  autoComplete="off"
+                  className="h-10 flex-1 rounded-xl border border-rose-500/40 bg-background px-3 text-sm font-semibold outline-none focus:border-rose-500"
+                />
+                <Button
+                  onClick={() => void deleteBroker()}
+                  disabled={!canDelete}
+                  className="h-10 rounded-xl bg-rose-600 px-5 text-sm font-bold text-white hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {busy === "delete" ? <Loader2 className="h-4 w-4 animate-spin" /> : "Delete"}
+                </Button>
+              </div>
+            </div>
+          </>
+        )}
       </CardContent>
     </Card>
   );
@@ -881,12 +1068,38 @@ function Analytics({
     [series],
   );
 
-  const daily = useMemo(
-    () => full.slice(-Number(period)).map((p) => ({ x: p.date, value: p.value })),
-    [full, period],
+  // When there is no history yet, render the charts on a flat zero baseline
+  // (last 90 days of zeros) instead of an empty canvas. Generated in an
+  // effect because Date.now() is not allowed during render.
+  const [zeroBase, setZeroBase] = useState<DayPoint[] | null>(null);
+  useEffect(() => {
+    if (full.length > 0 || zeroBase) return;
+    // Deferred so Date.now() + setState don't run synchronously in the
+    // effect body (react-hooks/purity + set-state-in-effect rules).
+    const timer = setTimeout(() => {
+      const DAY = 86400000;
+      const now = Date.now();
+      setZeroBase(
+        Array.from({ length: 90 }, (_, i) => ({
+          date: new Date(now - (89 - i) * DAY).toISOString(),
+          value: 0,
+        }))
+      );
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [full.length, zeroBase]);
+
+  const base = useMemo<DayPoint[]>(
+    () => (full.length > 0 ? full : (zeroBase ?? [])),
+    [full, zeroBase]
   );
-  const weekly = useMemo(() => sumChunks(full.slice(-84), 7), [full]);
-  const monthly = useMemo(() => sumChunks(full, 30), [full]);
+
+  const daily = useMemo(
+    () => base.slice(-Number(period)).map((p) => ({ x: p.date, value: p.value })),
+    [base, period],
+  );
+  const weekly = useMemo(() => sumChunks(base.slice(-84), 7), [base]);
+  const monthly = useMemo(() => sumChunks(base, 30), [base]);
 
   const total = daily.reduce((a, d) => a + d.value, 0);
   const best = daily.length ? Math.max(...daily.map((d) => d.value)) : 0;
@@ -919,14 +1132,14 @@ function Analytics({
         <CardHeader>
           <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
             <div>
-              <CardTitle className="text-xl font-bold">Daily Profit / Loss</CardTitle>
+              <CardTitle className="text-xl font-extrabold tracking-tight">Daily Profit / Loss</CardTitle>
               <CardDescription className="mt-1">Net result per day over the last {period} days</CardDescription>
             </div>
             <Segmented value={period} onChange={setPeriod} options={[{ key: "7", label: "7D" }, { key: "30", label: "30D" }, { key: "90", label: "90D" }]} />
             <div className="flex overflow-hidden rounded-xl border border-border/60">
               {summary.map((s, i) => (
                 <div key={s.label} className={`flex flex-1 flex-col justify-center gap-0.5 px-4 py-2.5 text-left ${i > 0 ? "border-l border-border/60" : ""}`}>
-                  <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{s.label}</span>
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{s.label}</span>
                   <span className={`font-mono text-sm font-bold leading-none tabular-nums ${plTone(s.value)}`}>{signed(s.value)}</span>
                 </div>
               ))}
@@ -942,7 +1155,7 @@ function Analytics({
         <Card className="border-violet-500/20 shadow-sm">
           <CardHeader>
             <div className="flex items-center justify-between gap-3">
-              <CardTitle className="text-xl font-bold">Weekly Performance</CardTitle>
+              <CardTitle className="text-xl font-extrabold tracking-tight">Weekly Performance</CardTitle>
               <SampleBadge text={`CAPITAL.COM · ${env.toUpperCase()}`} tone={env === "live" ? "green" : "amber"} />
             </div>
             <CardDescription>Net P/L per week, last 12 weeks</CardDescription>
@@ -955,7 +1168,7 @@ function Analytics({
         <Card className="border-violet-500/20 shadow-sm">
           <CardHeader>
             <div className="flex items-center justify-between gap-3">
-              <CardTitle className="text-xl font-bold">Monthly Performance</CardTitle>
+              <CardTitle className="text-xl font-extrabold tracking-tight">Monthly Performance</CardTitle>
               <SampleBadge text={`CAPITAL.COM · ${env.toUpperCase()}`} tone={env === "live" ? "green" : "amber"} />
             </div>
             <CardDescription>Net P/L per 30-day period, last 90 days</CardDescription>
@@ -969,7 +1182,7 @@ function Analytics({
       {/* Winning vs losing trades: unchanged */}
       <Card className="border-violet-500/20 shadow-sm">
         <CardHeader className="flex flex-row items-center justify-between space-y-0">
-          <CardTitle className="text-xl font-bold">Winning vs Losing Trades</CardTitle><SampleBadge text={`CAPITAL.COM · ${env.toUpperCase()}`} tone={env === "live" ? "green" : "amber"} />
+          <CardTitle className="text-xl font-extrabold tracking-tight">Winning vs Losing Trades</CardTitle><SampleBadge text={`CAPITAL.COM · ${env.toUpperCase()}`} tone={env === "live" ? "green" : "amber"} />
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="flex h-2 w-full overflow-hidden rounded-full bg-muted">
@@ -990,10 +1203,10 @@ function Analytics({
 /* ───────────────── Trading setup view ───────────────── */
 
 function SetupView({
-  answers, env, connected, onRestart, onReset, onConnected,
+  answers, env, connected, broker, onRestart, onReset, onChanged,
 }: {
-  answers: Answers; env: Mode; connected: boolean;
-  onRestart: () => void; onReset: () => void; onConnected?: () => void;
+  answers: Answers; env: Mode; connected: boolean; broker: ApiBrokerStatus | null;
+  onRestart: () => void; onReset: () => void; onChanged?: () => void;
 }) {
   return (
     <div className="grid items-start gap-6 lg:grid-cols-[22rem_minmax(0,1fr)]">
@@ -1001,7 +1214,7 @@ function SetupView({
       <aside className="space-y-6 lg:sticky lg:top-24">
         <Card className="border-violet-500/20 shadow-sm">
           <CardHeader>
-            <CardTitle className="text-xl font-bold">Broker Connection</CardTitle>
+            <CardTitle className="text-xl font-extrabold tracking-tight">Broker Connection</CardTitle>
             <CardDescription>We trade Gold on your Capital.com account.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -1015,7 +1228,7 @@ function SetupView({
                 <img src={CAPITAL_LOGO} alt="Capital.com" className="h-12 w-12 rounded-xl object-cover" />
               }
             />
-            <p className="text-center text-[11px] text-muted-foreground">{DISCLAIMER}</p>
+            <p className="text-center text-xs text-muted-foreground">{DISCLAIMER}</p>
             <p className={`text-center text-xs font-bold ${
               !connected
                 ? "text-amber-600 dark:text-amber-400"
@@ -1030,14 +1243,14 @@ function SetupView({
 
         <Card className="border-violet-500/20 shadow-sm">
           <CardHeader>
-            <CardTitle className="text-xl font-bold">Your Answers</CardTitle>
+            <CardTitle className="text-xl font-extrabold tracking-tight">Your Answers</CardTitle>
             <CardDescription>Your saved setup answers.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-2 grid-cols-2 sm:grid-cols-2">
               {[["Pair", "XAU/USD"], ["Experience", answers.experience || "Not set"]].map(([k, v]) => (
                 <div key={k} className="rounded-xl border border-border/60 bg-muted/20 px-4 py-3">
-                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground">{k}</p>
+                  <p className="text-[11px] uppercase tracking-wider text-muted-foreground">{k}</p>
                   <p className="mt-0.5 text-sm font-bold">{v}</p>
                 </div>
               ))}
@@ -1058,7 +1271,7 @@ function SetupView({
 
       {/* Right: connect form first, then API guide */}
       <div className="min-w-0 space-y-6">
-        <CapitalConnectForm env={env} onSuccess={onConnected} />
+        <CapitalConnectForm env={env} onSuccess={onChanged} />
 
         <Card className="border-violet-500/20 shadow-sm">
           <CardHeader>
@@ -1073,6 +1286,8 @@ function SetupView({
             <ApiSteps />
           </CardContent>
         </Card>
+
+        <DangerZone broker={broker} onChanged={onChanged} />
       </div>
     </div>
   );
@@ -1087,7 +1302,6 @@ function Dashboard({
   const [confirmLive, setConfirmLive] = useState(false);
   const [envBusy, setEnvBusy] = useState(false);
   const env = answers.env;
-  const credits = 120;
 
   const data = useTradingData(env);
 
@@ -1218,15 +1432,16 @@ function Dashboard({
               tone="bg-rose-500/15 text-rose-600 dark:text-rose-400"
             />
           </section>
-          <BotControl
-            a={answers}
-            credits={credits}
-            bot={data.botState}
-            setBot={(s) => void handleBot(s)}
-            env={env}
-            onEnv={switchEnv}
-            statusNote={statusNote}
-          />
+          <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+            <BrokerAccount broker={data.broker} />
+            <BotControl
+              bot={data.botState}
+              setBot={(s) => void handleBot(s)}
+              env={env}
+              onEnv={switchEnv}
+              statusNote={statusNote}
+            />
+          </div>
           {data.emergencyStop && (
             <div className="flex items-center gap-2 rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-xs font-bold text-rose-600 dark:text-rose-300">
               <ShieldAlert className="h-4 w-4 shrink-0" /> EMERGENCY STOP ACTIVE — no new trades will be submitted.
@@ -1252,13 +1467,14 @@ function Dashboard({
           answers={answers}
           env={env}
           connected={data.connected}
+          broker={data.broker}
           onRestart={onRestart}
           onReset={reset}
-          onConnected={data.refresh}
+          onChanged={data.refresh}
         />
       )}
 
-      <p className="pb-4 text-center text-[11px] text-muted-foreground">
+      <p className="pb-4 text-center text-xs text-muted-foreground">
         Leveraged trading and CFDs carry significant risk of loss. Figures shown come from your connected Capital.com {env.toUpperCase()} account.
       </p>
 
@@ -1357,6 +1573,7 @@ function Dashboard({
 /* ───────────────── Page ───────────────── */
 
 export default function TradingSetupPage() {
+  const router = useRouter();
   const [answers, setAnswers] = useState<Answers>(EMPTY);
   const [done, setDone] = useState(false);
   const [ready, setReady] = useState(false);
@@ -1388,6 +1605,13 @@ export default function TradingSetupPage() {
   return done ? (
     <Dashboard answers={answers} setAnswers={setAnswers} onRestart={() => { setDone(false); }} />
   ) : (
-    <Onboarding answers={answers} setAnswers={setAnswers} onFinish={() => setDone(true)} />
+    <Onboarding
+      answers={answers}
+      setAnswers={setAnswers}
+      onFinish={() => {
+        setDone(true);
+        router.push("/UserDashboard/dashboard");
+      }}
+    />
   );
 }

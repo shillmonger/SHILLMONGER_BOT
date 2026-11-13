@@ -103,12 +103,7 @@ export async function PUT(request: NextRequest) {
       { userId },
       {
         $set: { environment: env },
-        $setOnInsert: {
-          userId,
-          maxOpenPositions: 0,
-          riskPercentage: 0,
-          maxDailyLoss: 0,
-        },
+        $setOnInsert: { userId },
       },
       { upsert: true, setDefaultsOnInsert: true }
     );

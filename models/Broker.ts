@@ -32,6 +32,8 @@ export interface IBroker extends Document {
   encryptedApiPassword: string;
   environment: BrokerEnvironment;
   connectionStatus: BrokerConnectionStatus;
+  /** Operator-controlled activation — 'disabled' blocks all bot execution */
+  status: 'active' | 'disabled';
   connectionError?: string;
   accountInfo?: IBrokerAccountInfo;
   /** Encrypted session tokens (CST / X-SECURITY-TOKEN) so sessions survive restarts */
@@ -80,6 +82,11 @@ const BrokerSchema: Schema = new Schema(
       type: String,
       enum: ['not_connected', 'connected', 'error', 'disconnected'],
       default: 'not_connected',
+    },
+    status: {
+      type: String,
+      enum: ['active', 'disabled'],
+      default: 'active',
     },
     connectionError: {
       type: String,

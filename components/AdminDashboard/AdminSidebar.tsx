@@ -8,12 +8,15 @@ import {
   LayoutDashboard,
   Send,
   Signal,
+  DatabaseZap,
+  ChartColumn,
   UsersRound,
   Settings,
   Lock,
   LogOut,
   ChevronDown,
   BadgeCheck,
+  House,
   KeyRound,
   UserRoundKey,
   PieChart,
@@ -71,11 +74,10 @@ export default function AdminSidebar({
   }, [showLogoutConfirm, countdown]);
 
   const navItems: NavItem[] = [
-    { name: "Dashboard", icon: LayoutDashboard, href: `${basePath}/dashboard` },
-    { name: "TG Signals", icon: Signal, href: `${basePath}/signals` },
+    { name: "Dashboard", icon: House, href: `${basePath}/dashboard` },
     { name: "TG Providers", icon: Send, href: `${basePath}/providers` },
-    { name: "Bot Subscriptions", icon: BadgeCheck, href: `${basePath}/bot-billing` },
-    { name: "Copy Trades", icon: Tags, href: `${basePath}/copy-trades` },
+    { name: "Bot Billings", icon: BadgeCheck, href: `${basePath}/bot-billing` },
+    { name: "Broker Control", icon: DatabaseZap, href: `${basePath}/broker-control` },
     {
       name: "Bot Settings",
       icon: Settings,
@@ -83,22 +85,20 @@ export default function AdminSidebar({
         { name: "Position Limits", icon: CircleGauge, href: `${basePath}/position-limits` },
         { name: "Lot size Config", icon: Scale, href: `${basePath}/lot-size` },
         { name: "Stop lose Config", icon: TriangleAlert, href: `${basePath}/stop-loss` },
-        { name: "Trades Actions", icon: History, href: `${basePath}/trades-actions` },
       ],
     },
-     {
+    { name: "Trade Signals", icon: ChartColumn, href: `${basePath}/signals` },
+    { name: "Bot Analytics", icon: PieChart, href: `${basePath}/my-investments` },
+    {
       name: "Audit logs",
       icon: KeyRound,
       children: [
         { name: "TG Messages", icon: MailSearch, href: `${basePath}/` },
-        { name: "AI Messages", icon: Brain, href: `${basePath}/` },
-        { name: "Final Signals", icon: Signal, href: `${basePath}/` },
       ],
     },
-    { name: "Bot Analytics", icon: PieChart, href: `${basePath}/my-investments` },
     { name: "Role Settings", icon: UserRoundKey, href: `${basePath}/role-settings` },
     { name: "User Management", icon: UsersRound, href: `${basePath}/user-management` },
-    { name: "Switch to User", icon: Lock, href: `/UserDashboard/dashboard` },
+    { name: "Switch back 2 User", icon: Lock, href: `/UserDashboard/dashboard` },
   ];
 
   useEffect(() => {

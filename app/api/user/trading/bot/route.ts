@@ -145,13 +145,9 @@ export async function PUT(request: NextRequest) {
       { userId },
       {
         $set: update,
-        $setOnInsert: {
-          userId,
-          // 0 = defer to admin-managed PositionLimit/LotSize/StopLoss rules
-          maxOpenPositions: 0,
-          riskPercentage: 0,
-          maxDailyLoss: 0,
-        },
+        // Schema defaults already supply the 0 values on insert; only
+        // userId must be set explicitly (never in $set — it's the filter).
+        $setOnInsert: { userId },
       },
       { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true }
     ).lean();

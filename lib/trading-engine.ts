@@ -95,6 +95,10 @@ async function executeForUser(
     if (!broker || broker.connectionStatus !== 'connected') {
       return { executed: false, reason: 'broker_not_connected' };
     }
+    // Operator-disabled broker — never execute for this user.
+    if (broker.status === 'disabled') {
+      return { executed: false, reason: 'broker_disabled' };
+    }
 
     /* ---- Instrument allowlist ---- */
     const symbol = (signal.symbol || '').toUpperCase();

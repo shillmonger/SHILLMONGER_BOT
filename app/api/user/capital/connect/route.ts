@@ -66,6 +66,7 @@ export async function POST(request: NextRequest) {
           encryptedApiKey: encrypt(apiKey),
           encryptedApiPassword: encrypt(apiPassword),
           connectionStatus: 'not_connected',
+          status: 'active',
           connectionError: null,
         },
         $setOnInsert: { userId },
@@ -117,6 +118,7 @@ export async function POST(request: NextRequest) {
         $set: {
           environment: env,
           connectionStatus: 'connected',
+          status: 'active',
           connectionError: null,
           accountInfo: accountInfo ?? null,
           lastConnectedAt: new Date(),
