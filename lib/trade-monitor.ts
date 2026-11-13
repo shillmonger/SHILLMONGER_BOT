@@ -329,10 +329,19 @@ async function reconcileOpen(
   getHistory: () => Promise<CapitalActivity[]>,
   summary: MonitorSummary
 ) {
-  const stillOpen = positions.some(
+  const openPos = positions.find(
     (p) => positionDealId(p) === exec.dealId
   );
-  if (stillOpen) {
+  if (openPos) {
+    // Refresh live unrealized P/L every tick while the trade is open.
+    const upl = asRecord(openPos.position).upl ?? asRecord(openPos.position).profitLoss;
+    await TradeExecution.updateOne(
+      { _id: exec._id },
+      { $set: { unrealizedPnl: typeof upl === 'number' ? upl : null } }
+    );
+    // Keep the evaluation's lifecycle fields converged (also heals docs
+    // written before orderType mirroring existed).
+    await syncEvaluation(exec, 'trade_open');
     summary.unchanged += 1;
     return;
   }
@@ -351,6 +360,7 @@ async function reconcileOpen(
 
   await markState(exec, 'closed', {
     realizedPnl: typeof pnl === 'number' ? pnl : null,
+    unrealizedPnl: null,
     closedAt,
     error: null,
   });
@@ -369,6 +379,7 @@ async function markState(
     openedAt?: Date;
     confirmedAt?: Date;
     realizedPnl?: number | null;
+    unrealizedPnl?: number | null;
     closedAt?: Date;
     error?: string | null;
   }
@@ -378,6 +389,7 @@ async function markState(
   if (fields.openedAt) $set.openedAt = fields.openedAt;
   if (fields.confirmedAt) $set.confirmedAt = fields.confirmedAt;
   if (fields.realizedPnl !== undefined) $set.realizedPnl = fields.realizedPnl;
+  if (fields.unrealizedPnl !== undefined) $set.unrealizedPnl = fields.unrealizedPnl;
   if (fields.closedAt) $set.closedAt = fields.closedAt;
   if (fields.error !== undefined) $set.error = fields.error;
   await TradeExecution.updateOne({ _id: exec._id }, { $set });
@@ -392,9 +404,26 @@ async function markFailed(exec: ExecDoc, reason: string, summary: MonitorSummary
 /** Mirror the lifecycle onto the linked SIGNAL_EVALUATIONS doc. */
 async function syncEvaluation(exec: ExecDoc, stage: string) {
   try {
+    // orderType on the evaluation mirrors the TRADE state going forward
+    // (PENDING -> OPEN -> CLOSED); the signal's original order_type stays
+    // preserved on the signals doc via signalRefId.
+    const orderType =
+      stage === 'trade_open' ? 'OPEN'
+      : stage === 'trade_closed' ? 'CLOSED'
+      : stage === 'trade_pending' ? 'PENDING'
+      : stage === 'trade_failed' ? 'FAILED'
+      : stage === 'trade_cancelled' ? 'CANCELLED'
+      : null;
     await SignalEvaluation.updateMany(
       { executionId: exec._id },
-      { $set: { stage, reason: null, evaluatedAt: new Date() } }
+      {
+        $set: {
+          stage,
+          reason: null,
+          evaluatedAt: new Date(),
+          ...(orderType ? { orderType } : {}),
+        },
+      }
     );
   } catch (e) {
     console.error('[trade-monitor] evaluation sync failed:', e);

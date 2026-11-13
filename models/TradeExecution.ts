@@ -41,6 +41,8 @@ export interface ITradeExecution extends Document {
   error?: string;
   /** Realized P/L reported by Capital.com once closed */
   realizedPnl?: number;
+  /** Live unrealized P/L (upl) refreshed by the trade monitor while open */
+  unrealizedPnl?: number;
   closedAt?: Date;
   openedAt?: Date;
   confirmedAt?: Date;
@@ -85,6 +87,7 @@ const TradeExecutionSchema: Schema = new Schema(
     },
     error: { type: String, default: null },
     realizedPnl: { type: Number, default: null },
+    unrealizedPnl: { type: Number, default: null },
     closedAt: { type: Date, default: null },
     openedAt: { type: Date, default: null },
     confirmedAt: { type: Date, default: null },
