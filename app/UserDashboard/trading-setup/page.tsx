@@ -15,6 +15,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { AnimatedBrokerLogos } from "@/components/AnimatedBrokerLogos";
+import ShillmongerLoader from "@/components/ShillmongerLoader";
+import { useMainContentLoading } from "@/components/UserDashboard/MainContentLoading";
 import {
   ChartContainer,
   ChartTooltip,
@@ -555,7 +557,6 @@ function CapitalGuide({ env }: { env: Mode }) {
       />
       <p className="text-center text-xs text-muted-foreground">{DISCLAIMER}</p>
       <CapitalConnectForm env={env} />
-      <ApiSteps />
     </div>
   );
 }
@@ -595,7 +596,7 @@ function Onboarding({
   ][step];
 
   return (
-    <main className="flex min-h-[calc(100vh-10rem)] items-center justify-center bg-background px-4 py-6 text-foreground">
+    <main className="flex min-h-[calc(100vh-10rem)] items-center justify-center px-4 py-6 text-foreground">
       <div className="w-full max-w-2xl space-y-4">
         <div className="flex items-center justify-between">
           <p className={`${plexMono.className} text-[11px] tracking-[0.2em] text-violet-600 dark:text-violet-400`}>[ // TRADING SETUP ]</p>
@@ -1335,9 +1336,20 @@ function Dashboard({
   const [view, setView] = useState<View>("dashboard");
   const [confirmLive, setConfirmLive] = useState(false);
   const [envBusy, setEnvBusy] = useState(false);
+  const [booted, setBooted] = useState(false);
   const env = answers.env;
 
   const data = useTradingData(env);
+  const setMainLoading = useMainContentLoading();
+
+  if (!data.loading && !booted) setBooted(true);
+
+  // Keep the layout loader up until the initial trading-data fetch finishes.
+  useEffect(() => {
+    setMainLoading(!booted && data.loading);
+  }, [booted, data.loading, setMainLoading]);
+
+  useEffect(() => () => setMainLoading(false), [setMainLoading]);
 
   const closedTrades = data.trades.filter((t) => t.status !== "OPEN");
   const totalProfit = closedTrades.reduce((a, t) => a + (t.pl ?? 0), 0);
@@ -1406,6 +1418,14 @@ function Dashboard({
     setAnswers(EMPTY);
     onRestart();
   };
+
+  if (!booted) {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <ShillmongerLoader className="w-full max-w-md" label="Loading trading data" />
+      </div>
+    );
+  }
 
   const current = NAV.find((n) => n.key === view);
   const badgeText = data.connected

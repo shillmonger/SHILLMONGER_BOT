@@ -4,6 +4,8 @@ import React, { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { useTheme } from "next-themes";
 import { useMounted } from "@/hooks/useMounted";
+import ShillmongerLoader from "@/components/ShillmongerLoader";
+import { useMainContentLoading } from "@/components/UserDashboard/MainContentLoading";
 import { IBM_Plex_Mono } from "next/font/google";
 import {
   User,
@@ -215,6 +217,7 @@ export default function UserSettingsPage() {
   // --- Theme state ---
   const mounted = useMounted();
   const { theme, setTheme } = useTheme();
+  const setMainLoading = useMainContentLoading();
   const darkMode = theme === "dark";
   const toggleTheme = () => setTheme(darkMode ? "light" : "dark");
 
@@ -300,6 +303,13 @@ export default function UserSettingsPage() {
 
     fetchUserData();
   }, []);
+
+  // Keep the layout loader visible until user data finishes loading.
+  useEffect(() => {
+    setMainLoading(isLoading);
+  }, [isLoading, setMainLoading]);
+
+  useEffect(() => () => setMainLoading(false), [setMainLoading]);
 
   // --- Handlers ---
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -487,11 +497,11 @@ export default function UserSettingsPage() {
         : pillBad;
 
   return (
-    <main className="min-h-screen bg-background text-foreground">
+    <main className="min-h-screen text-foreground">
       <div className="mx-auto max-w-6xl space-y-6 py-4">
         {isLoading ? (
-          <div className="flex items-center justify-center py-20">
-            <Loader2 className="w-8 h-8 animate-spin text-violet-500" />
+          <div className="flex min-h-[50vh] items-center justify-center">
+            <ShillmongerLoader className="w-full max-w-md" label="Loading account settings" />
           </div>
         ) : (
           <>

@@ -7,7 +7,6 @@ import {
   ChevronLeft,
   ChevronRight,
   HelpCircle,
-  Loader2,
   MessageSquareText,
   RefreshCw,
   Search,
@@ -15,6 +14,8 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import ShillmongerLoader from "@/components/ShillmongerLoader";
+import { useMainContentLoading } from "@/components/UserDashboard/MainContentLoading";
 
 const plexMono = IBM_Plex_Mono({
   weight: ["400", "500", "600"],
@@ -29,6 +30,7 @@ interface LogRow {
   chatId: string;
   messageId: number | null;
   processedAt: string | null;
+  signalStatus: string | null;
   provider: {
     groupId: string;
     groupName: string;
@@ -41,7 +43,7 @@ const PAGE_SIZE = 15;
 
 /* ───────────────── Helpers ───────────────── */
 
-const Badge = ({ text, tone }: { text: string; tone: "green" | "amber" | "red" | "gray" }) => (
+const Badge = ({ text, tone }: { text: string; tone: "green" | "amber" | "red" | "gray" | "blue" }) => (
   <span className={`${plexMono.className} inline-flex whitespace-nowrap rounded-full border px-2 py-0.5 text-[10px] font-semibold tracking-wider ${
     tone === "green"
       ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
@@ -49,13 +51,24 @@ const Badge = ({ text, tone }: { text: string; tone: "green" | "amber" | "red" |
         ? "border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400"
         : tone === "amber"
           ? "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400"
-          : "border-border/60 bg-muted/30 text-muted-foreground"
+          : tone === "blue"
+            ? "border-sky-500/30 bg-sky-500/10 text-sky-600 dark:text-sky-400"
+            : "border-border/60 bg-muted/30 text-muted-foreground"
   }`}>
     {text}
   </span>
 );
 
 const fmtDate = (d?: string | null) => (d ? new Date(d).toLocaleString() : "—");
+
+const signalStatusTone = (status?: string | null): "green" | "amber" | "red" | "gray" | "blue" => {
+  const s = (status ?? "").toUpperCase();
+  if (s === "PENDING" || s === "QUEUED") return "amber";
+  if (s === "RECEIVED" || s === "STORED") return "blue";
+  if (s === "EXECUTED" || s === "OPEN" || s === "FILLED" || s === "SUCCESS") return "green";
+  if (s === "REJECTED" || s === "FAILED" || s === "ERROR") return "red";
+  return "gray";
+};
 
 const SELECT_CLS =
   "h-10 rounded-lg border border-border/60 bg-card px-3 text-xs font-semibold outline-none transition-colors hover:border-violet-500/50 focus:border-violet-500/60 focus:ring-2 focus:ring-violet-500/20";
@@ -95,6 +108,7 @@ export default function ProcessedLogsPage() {
   const [query, setQuery] = useState("");
   const [providerFilter, setProviderFilter] = useState<string>("all");
   const [page, setPage] = useState(1);
+  const setMainLoading = useMainContentLoading();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -115,6 +129,13 @@ export default function ProcessedLogsPage() {
     return () => clearTimeout(t);
   }, [load]);
 
+  // Keep the layout loader visible while logs are loading.
+  useEffect(() => {
+    setMainLoading(loading);
+  }, [loading, setMainLoading]);
+
+  useEffect(() => () => setMainLoading(false), [setMainLoading]);
+
   /* provider options for the filter */
   const providers = useMemo(() => {
     const map = new Map<string, { name: string; image: string | null }>();
@@ -134,6 +155,7 @@ export default function ProcessedLogsPage() {
         l.provider?.groupName,
         l.chatId,
         l.messageId != null ? String(l.messageId) : null,
+        l.signalStatus,
       ].some((v) => v?.toLowerCase().includes(q));
     });
   }, [logs, query, providerFilter]);
@@ -173,7 +195,7 @@ export default function ProcessedLogsPage() {
           <input
             value={query}
             onChange={(e) => { setQuery(e.target.value); setPage(1); }}
-            placeholder="Search provider, chat ID or message ID"
+            placeholder="Search provider, chat ID, message ID or signal status"
             className="h-10 w-full rounded-lg border border-border/60 bg-card pl-9 pr-3 text-xs font-medium outline-none transition-colors placeholder:text-muted-foreground/70 hover:border-violet-500/50 focus:border-violet-500/60 focus:ring-2 focus:ring-violet-500/20"
           />
         </div>
@@ -191,8 +213,8 @@ export default function ProcessedLogsPage() {
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center gap-2 rounded-2xl border border-border/60 bg-muted/20 py-16 text-muted-foreground">
-          <Loader2 className="h-5 w-5 animate-spin" /> Loading logs…
+        <div className="flex min-h-[40vh] items-center justify-center">
+          <ShillmongerLoader className="w-full max-w-md" label="Loading logs" />
         </div>
       ) : logs.length === 0 ? (
         <Card className="border-violet-500/20">
@@ -207,20 +229,29 @@ export default function ProcessedLogsPage() {
       ) : (
         <Card className="gap-0 overflow-hidden border-violet-500/20 p-0 shadow-sm">
           <div className="overflow-x-auto">
-            <table className="w-full" style={{ minWidth: 760 }}>
+            <table className="w-full table-fixed" style={{ minWidth: 1040 }}>
+              <colgroup>
+                <col style={{ width: "24%" }} />
+                <col style={{ width: "13%" }} />
+                <col style={{ width: "13%" }} />
+                <col style={{ width: "16%" }} />
+                <col style={{ width: "12%" }} />
+                <col style={{ width: "22%" }} />
+              </colgroup>
               <thead>
                 <tr className="border-b border-border/50 bg-muted/20">
                   <th className={TH}>Provider</th>
                   <th className={TH}>Chat ID</th>
                   <th className={TH}>Message ID</th>
+                  <th className={TH}>Signal Status</th>
                   <th className={TH}>Status</th>
-                  <th className={TH}>Processed at</th>
+                  <th className={`${TH} text-right`}>Processed at</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/40">
                 {rows.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-4 py-12 text-center text-xs text-muted-foreground">
+                    <td colSpan={6} className="px-4 py-12 text-center text-xs text-muted-foreground">
                       No logs match your filters.
                     </td>
                   </tr>
@@ -231,8 +262,8 @@ export default function ProcessedLogsPage() {
                         <div className="flex items-center gap-3">
                           <Avatar name={l.provider.groupName} src={l.provider.profileImage} />
                           <div className="min-w-0">
-                            <p className="truncate text-sm font-bold">{l.provider.groupName}</p>
-                            <p className="truncate text-xs text-muted-foreground">{l.provider.groupId}</p>
+                            <p className="truncate text-sm font-bold" title={l.provider.groupName}>{l.provider.groupName}</p>
+                            <p className="truncate text-xs text-muted-foreground" title={l.provider.groupId}>{l.provider.groupId}</p>
                           </div>
                         </div>
                       ) : (
@@ -247,8 +278,14 @@ export default function ProcessedLogsPage() {
                         </div>
                       )}
                     </td>
-                    <td className={`${TD} font-mono text-xs text-muted-foreground`}>{l.chatId}</td>
-                    <td className={`${TD} font-mono text-xs font-semibold`}>{l.messageId ?? "—"}</td>
+                    <td className={`${TD} truncate font-mono text-xs text-muted-foreground`} title={l.chatId}>{l.chatId}</td>
+                    <td className={`${TD} truncate font-mono text-xs font-semibold`} title={l.messageId?.toString()}>{l.messageId ?? "—"}</td>
+                    <td className={TD}>
+                      <Badge
+                        text={(l.signalStatus ?? "NO SIGNAL").toUpperCase()}
+                        tone={signalStatusTone(l.signalStatus)}
+                      />
+                    </td>
                     <td className={TD}>
                       {l.provider ? (
                         <Badge
@@ -259,7 +296,11 @@ export default function ProcessedLogsPage() {
                         <Badge text="UNLINKED" tone="amber" />
                       )}
                     </td>
-                    <td className={`${TD} whitespace-nowrap text-muted-foreground`}>{fmtDate(l.processedAt)}</td>
+                    <td className={TD}>
+                      <div className="flex justify-end whitespace-nowrap text-muted-foreground">
+                        {fmtDate(l.processedAt)}
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>

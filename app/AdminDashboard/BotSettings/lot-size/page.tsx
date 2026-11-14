@@ -3,6 +3,8 @@
 import { useState, useEffect } from "react";
 import { Trash2, Plus, Loader2, AlertTriangle, Edit2, X } from "lucide-react";
 import { toast } from "sonner";
+import ShillmongerLoader from "@/components/ShillmongerLoader";
+import { useMainContentLoading } from "@/components/UserDashboard/MainContentLoading";
 
 interface LotSizeRule {
   _id: string;
@@ -17,6 +19,7 @@ interface LotSizeRule {
 export default function LotSizePage() {
   const [lotSizeRules, setLotSizeRules] = useState<LotSizeRule[]>([]);
   const [loading, setLoading] = useState(true);
+  const setMainLoading = useMainContentLoading();
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [selectedRule, setSelectedRule] = useState<LotSizeRule | null>(null);
@@ -37,7 +40,14 @@ export default function LotSizePage() {
     fetchLotSizeRules();
   }, []);
 
-  const fetchLotSizeRules = async () => {
+  // Keep the layout loader visible while rules are loading.
+  useEffect(() => {
+    setMainLoading(loading);
+  }, [loading, setMainLoading]);
+
+  useEffect(() => () => setMainLoading(false), [setMainLoading]);
+
+  async function fetchLotSizeRules() {
     try {
       const response = await fetch("/api/admin/lot-size");
       const data = await response.json();
@@ -52,7 +62,7 @@ export default function LotSizePage() {
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   const handleDelete = (rule: LotSizeRule) => {
     setSelectedRule(rule);
@@ -292,11 +302,8 @@ export default function LotSizePage() {
 
           {/* Rules Table */}
           {loading ? (
-            <div className="flex flex-col items-center justify-center py-12">
-              <Loader2 className="w-12 h-12 text-muted-foreground animate-spin mb-4" />
-              <p className="text-sm font-bold text-muted-foreground">
-                Loading rules...
-              </p>
+            <div className="flex min-h-[40vh] items-center justify-center">
+              <ShillmongerLoader className="w-full max-w-md" label="Loading rules" />
             </div>
           ) : lotSizeRules.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 border border-dashed border-border/50 rounded-xl">

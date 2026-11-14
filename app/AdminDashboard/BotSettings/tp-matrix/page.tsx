@@ -3,6 +3,8 @@
 import { useState, useEffect } from "react";
 import { Trash2, Plus, Loader2, AlertTriangle, Edit2, X } from "lucide-react";
 import { toast } from "sonner";
+import ShillmongerLoader from "@/components/ShillmongerLoader";
+import { useMainContentLoading } from "@/components/UserDashboard/MainContentLoading";
 
 interface TPMatrixRule {
   _id: string;
@@ -17,6 +19,7 @@ interface TPMatrixRule {
 export default function TPMatrixPage() {
   const [tpMatrix, setTPMatrix] = useState<TPMatrixRule[]>([]);
   const [loading, setLoading] = useState(true);
+  const setMainLoading = useMainContentLoading();
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [selectedRule, setSelectedRule] = useState<TPMatrixRule | null>(null);
@@ -37,7 +40,14 @@ export default function TPMatrixPage() {
     fetchTPMatrix();
   }, []);
 
-const fetchTPMatrix = async () => {
+  // Keep the layout loader visible while rules are loading.
+  useEffect(() => {
+    setMainLoading(loading);
+  }, [loading, setMainLoading]);
+
+  useEffect(() => () => setMainLoading(false), [setMainLoading]);
+
+async function fetchTPMatrix() {
   try {
     const response = await fetch("/api/admin/tp-matrix");
     const data = await response.json();
@@ -53,7 +63,7 @@ const fetchTPMatrix = async () => {
   } finally {
     setLoading(false);
   }
-};
+}
 
   const handleDelete = (rule: TPMatrixRule) => {
     setSelectedRule(rule);
@@ -299,11 +309,8 @@ const fetchTPMatrix = async () => {
 
           {/* Rules Table */}
           {loading ? (
-            <div className="flex flex-col items-center justify-center py-12">
-              <Loader2 className="w-12 h-12 text-muted-foreground animate-spin mb-4" />
-              <p className="text-sm font-bold text-muted-foreground">
-                Loading rules...
-              </p>
+            <div className="flex min-h-[40vh] items-center justify-center">
+              <ShillmongerLoader className="w-full max-w-md" label="Loading rules" />
             </div>
           ) : tpMatrix.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 border border-dashed border-border/50 rounded-xl">

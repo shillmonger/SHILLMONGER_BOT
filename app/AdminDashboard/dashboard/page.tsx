@@ -21,8 +21,11 @@ import {
   CreditCard,
   Zap,
   CreditCard as CardIcon,
-  Wallet
+  Wallet,
+  type LucideIcon
 } from "lucide-react";
+import ShillmongerLoader from "@/components/ShillmongerLoader";
+import { useMainContentLoading } from "@/components/UserDashboard/MainContentLoading";
 // ─── Helper Functions ───────────────────────────────────────────────────────
 function formatCompactNumber(num: number): string {
   if (num < 1000) return num.toString();
@@ -33,8 +36,8 @@ function formatCompactNumber(num: number): string {
 
 interface DashboardStats {
   label: string;
-  value: string;
-  icon: any;
+  value: string | number;
+  icon: LucideIcon;
   color: string;
   bg: string;
 }
@@ -55,8 +58,16 @@ export default function AdminDashboardPage() {
   const [stats, setStats] = useState<DashboardStats[]>([]);
   const [recentTransactions, setRecentTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(false);
+  const setMainLoading = useMainContentLoading();
 
-  const iconMap: { [key: string]: any } = {
+  // Keep the layout loader visible while dashboard data is loading.
+  useEffect(() => {
+    setMainLoading(loading);
+  }, [loading, setMainLoading]);
+
+  useEffect(() => () => setMainLoading(false), [setMainLoading]);
+
+  const iconMap: { [key: string]: LucideIcon } = {
     Users,
     UserCheck,
     UserMinus,
@@ -97,7 +108,7 @@ export default function AdminDashboardPage() {
       
       if (data.success) {
         // Transform stats to include icon components and format monetary values
-        const transformedStats = data.stats.map((stat: any) => {
+        const transformedStats = (data.stats as (Omit<DashboardStats, "icon" | "value"> & { icon: string; value: string | number })[]).map((stat) => {
           let formattedValue = stat.value;
           
           // Apply compact formatting to monetary values (starting with $)
@@ -169,20 +180,9 @@ export default function AdminDashboardPage() {
           {/* Stats Grid */}
           <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
             {loading ? (
-              Array.from({ length: 46 }).map((_, i) => (
-                <div key={i} className="min-w-0 bg-card p-5 rounded-2xl border border-border shadow-sm">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="p-2 rounded-xl bg-muted animate-pulse">
-                      <div className="w-5 h-5 bg-muted-foreground/20 rounded"></div>
-                    </div>
-                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Live</span>
-                  </div>
-                  <div>
-                    <div className="h-3 bg-muted rounded w-20 mb-2 animate-pulse"></div>
-                    <div className="h-6 bg-muted rounded w-16 animate-pulse"></div>
-                  </div>
-                </div>
-              ))
+              <div className="flex min-h-[40vh] items-center justify-center">
+                <ShillmongerLoader className="w-full max-w-md" label="Loading dashboard" />
+              </div>
             ) : (
               stats.map((stat, index) => (
                 <div key={index} className="min-w-0 bg-card px-5 py-3 rounded-2xl border border-border shadow-sm hover:shadow-md transition-shadow">
@@ -217,39 +217,8 @@ export default function AdminDashboardPage() {
             </div>
 
             {loading ? (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left">
-                  <thead className="bg-muted text-muted-foreground text-[10px] uppercase tracking-widest font-bold">
-                    <tr>
-                      <th className="px-6 py-4">Transaction ID</th>
-                      <th className="px-6 py-4">Type</th>
-                      <th className="px-6 py-4">Amount</th>
-                      <th className="px-6 py-4">Status</th>
-                      <th className="px-6 py-4">Date</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20].map((item) => (
-                      <tr key={item} className="hover:bg-muted/50 transition-colors">
-                        <td className="px-6 py-4">
-                          <div className="h-4 bg-muted rounded w-24 animate-pulse"></div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="h-4 bg-muted rounded w-16 animate-pulse"></div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="h-4 bg-muted rounded w-20 animate-pulse"></div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="h-4 bg-muted rounded w-16 animate-pulse"></div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="h-4 bg-muted rounded w-20 animate-pulse"></div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="flex min-h-[30vh] items-center justify-center">
+                <ShillmongerLoader className="w-full max-w-md" label="Loading transactions" />
               </div>
             ) : recentTransactions.length > 0 ? (
               <div className="overflow-x-auto">

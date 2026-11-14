@@ -22,6 +22,8 @@ const plexMono = IBM_Plex_Mono({
 });
 
 import { Button } from "@/components/ui/button";
+import ShillmongerLoader from "@/components/ShillmongerLoader";
+import { useMainContentLoading } from "@/components/UserDashboard/MainContentLoading";
 import {
   Card,
   CardContent,
@@ -238,7 +240,7 @@ function toRecentTrade(e: ExecDoc): TradeRow {
   const profit = execProfit(e);
   const open = EXEC_OPEN.has(e.status ?? "");
   return {
-    id: (e.dealId ?? e._id).slice(-8).toUpperCase(),
+    id: `${(e.dealId ?? e._id ?? "").slice(-8)}-${String(e._id ?? "").slice(-4)}`.toUpperCase(),
     symbol: e.symbol || e.epic || "—",
     type: e.direction === "SELL" ? "SELL" : "BUY",
     entry: e.entryLevel ?? 0,
@@ -699,35 +701,20 @@ function PerformanceBarChart({
   );
 }
 
-/* ───────────────── Loading skeleton ───────────────── */
-
-function LoadingDashboard() {
-  return (
-    <div className="min-h-screen bg-background">
-      <div className="mx-auto max-w-7xl animate-pulse space-y-6 py-4">
-        <div className="h-12 w-64 rounded-xl bg-muted" />
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
-          {[0, 1, 2, 3, 4].map((i) => (
-            <div key={i} className="h-28 rounded-2xl bg-muted" />
-          ))}
-        </div>
-        <div className="h-48 rounded-2xl bg-muted" />
-        <div className="grid gap-6 lg:grid-cols-2">
-          <div className="h-80 rounded-2xl bg-muted" />
-          <div className="h-80 rounded-2xl bg-muted" />
-        </div>
-        <div className="h-96 rounded-2xl bg-muted" />
-      </div>
-    </div>
-  );
-}
-
 /* ───────────────── Page ───────────────── */
 
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const setMainLoading = useMainContentLoading();
+
+  // Keep the layout loader visible until dashboard data finishes loading.
+  useEffect(() => {
+    setMainLoading(loading);
+  }, [loading, setMainLoading]);
+
+  useEffect(() => () => setMainLoading(false), [setMainLoading]);
 
   async function fetchDashboardData(showRefresh = false) {
     try {
@@ -803,12 +790,16 @@ export default function DashboardPage() {
   }, []);
 
   if (loading) {
-    return <LoadingDashboard />;
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center">
+        <ShillmongerLoader className="w-full max-w-md" label="Loading dashboard" />
+      </div>
+    );
   }
 
   if (!data) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background px-4">
+      <div className="flex min-h-screen items-center justify-center px-4">
         <Card className="w-full max-w-md text-center">
           <CardContent className="p-8">
             <XCircle className="mx-auto h-10 w-10 text-red-500" />
@@ -832,7 +823,7 @@ export default function DashboardPage() {
   const plan = data.activePlan;
 
   return (
-    <main className="min-h-screen bg-background text-foreground">
+    <main className="min-h-screen text-foreground">
       <div className="mx-auto max-w-7xl space-y-6 py-4">
         {/* ───────── Page header ───────── */}
         <div className="flex flex-wrap items-end justify-between gap-4">
@@ -1037,9 +1028,9 @@ export default function DashboardPage() {
                 </thead>
 
                 <tbody className="divide-y divide-border/40">
-                  {data.recentTrades.slice(0, 6).map((trade) => (
+                  {data.recentTrades.slice(0, 6).map((trade, idx) => (
                     <tr
-                      key={trade.id}
+                      key={`${trade.id}-${idx}`}
                       className="transition-colors hover:bg-muted/30"
                     >
                       <td className="px-6 py-4 text-left">

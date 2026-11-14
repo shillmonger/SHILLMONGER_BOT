@@ -19,6 +19,8 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import ShillmongerLoader from "@/components/ShillmongerLoader";
+import { useMainContentLoading } from "@/components/UserDashboard/MainContentLoading";
 
 const plexMono = IBM_Plex_Mono({
   weight: ["400", "500", "600"],
@@ -299,6 +301,7 @@ export default function BrokerControlPage() {
   const [envFilter, setEnvFilter] = useState<"all" | "demo" | "live">("all");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "disabled">("all");
   const [page, setPage] = useState(1);
+  const setMainLoading = useMainContentLoading();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -318,6 +321,13 @@ export default function BrokerControlPage() {
     const t = setTimeout(() => void load(), 0);
     return () => clearTimeout(t);
   }, [load]);
+
+  // Keep the layout loader visible while brokers are loading.
+  useEffect(() => {
+    setMainLoading(loading);
+  }, [loading, setMainLoading]);
+
+  useEffect(() => () => setMainLoading(false), [setMainLoading]);
 
   /* filtering + pagination */
   const filtered = useMemo(() => {
@@ -437,8 +447,8 @@ export default function BrokerControlPage() {
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center gap-2 rounded-2xl border border-border/60 bg-muted/20 py-16 text-muted-foreground">
-          <Loader2 className="h-5 w-5 animate-spin" /> Loading brokers…
+        <div className="flex min-h-[40vh] items-center justify-center">
+          <ShillmongerLoader className="w-full max-w-md" label="Loading brokers" />
         </div>
       ) : brokers.length === 0 ? (
         <Card className="border-violet-500/20">
@@ -463,7 +473,6 @@ export default function BrokerControlPage() {
                   <th className={TH}>Connection</th>
                   <th className={TH}>Balance</th>
                   <th className={TH}>Equity</th>
-                  <th className={TH}>Unrealized P/L</th>
                   <th className={TH}>Last connected</th>
                   <th className={`${TH} text-right`}>Actions</th>
                 </tr>
@@ -471,7 +480,7 @@ export default function BrokerControlPage() {
               <tbody className="divide-y divide-border/40">
                 {rows.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="px-4 py-12 text-center text-xs text-muted-foreground">
+                    <td colSpan={9} className="px-4 py-12 text-center text-xs text-muted-foreground">
                       No brokers match your filters.
                     </td>
                   </tr>
@@ -480,7 +489,6 @@ export default function BrokerControlPage() {
                   const busy = busyId === b.id;
                   const name = b.user?.userName ?? b.user?.username ?? "Unknown user";
                   const img = b.user?.avatar ?? b.user?.image ?? b.user?.profileImage ?? null;
-                  const pl = b.account?.profitLoss;
                   return (
                     <tr key={b.id} className="transition-colors hover:bg-muted/30">
                       <td className={TD}>
@@ -518,11 +526,6 @@ export default function BrokerControlPage() {
                       </td>
                       <td className={`${TD} font-semibold tabular-nums`}>{fmtMoney(b.account?.balance, b.account?.currency)}</td>
                       <td className={`${TD} font-semibold tabular-nums`}>{fmtMoney(b.account?.equity, b.account?.currency)}</td>
-                      <td className={`${TD} font-bold tabular-nums ${
-                        pl == null ? "" : pl >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"
-                      }`}>
-                        {pl == null ? "—" : `${pl >= 0 ? "+" : "-"}${fmtMoney(Math.abs(pl), b.account?.currency)}`}
-                      </td>
                       <td className={`${TD} whitespace-nowrap text-muted-foreground`}>{fmtDate(b.lastConnectedAt)}</td>
                       <td className={`${TD} text-right`}>
                         <ActionMenu

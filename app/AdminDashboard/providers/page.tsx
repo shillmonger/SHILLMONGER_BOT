@@ -23,6 +23,8 @@ import {
   Activity,
 } from "lucide-react";
 import { toast } from "sonner";
+import ShillmongerLoader from "@/components/ShillmongerLoader";
+import { useMainContentLoading } from "@/components/UserDashboard/MainContentLoading";
 
 interface TelegramGroup {
   id: string;
@@ -175,6 +177,7 @@ export default function ProvidersPage() {
   const [telegramGroups, setTelegramGroups] = useState<TelegramGroup[]>([]);
   const [savedProviders, setSavedProviders] = useState<SavedProvider[]>([]);
   const [isLoadingProviders, setIsLoadingProviders] = useState(true);
+  const setMainLoading = useMainContentLoading();
   const [searchTerm, setSearchTerm] = useState("");
 
   // Real listener status from the Python bot (null = API unreachable)
@@ -277,6 +280,13 @@ export default function ProvidersPage() {
       clearInterval(interval);
     };
   }, []);
+
+  // Keep the layout loader visible while providers/groups are loading.
+  useEffect(() => {
+    setMainLoading(isLoadingProviders || isFetching);
+  }, [isLoadingProviders, isFetching, setMainLoading]);
+
+  useEffect(() => () => setMainLoading(false), [setMainLoading]);
 
   const handleConnect = async () => {
     setIsConnecting(true);
@@ -437,9 +447,8 @@ export default function ProvidersPage() {
                 />
 
                 {isFetching ? (
-                  <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border/60 py-10 text-center">
-                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                    <p className="text-sm font-bold text-muted-foreground">Fetching groups...</p>
+                  <div className="flex min-h-[30vh] items-center justify-center">
+                    <ShillmongerLoader className="w-full max-w-md" label="Fetching groups" />
                   </div>
                 ) : filteredGroups.length === 0 ? (
                   <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border/60 py-10 text-center">
@@ -518,9 +527,8 @@ export default function ProvidersPage() {
                 />
 
                 {isLoadingProviders ? (
-                  <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border/60 py-12 text-center">
-                    <Loader2 className="h-10 w-10 animate-spin text-muted-foreground" />
-                    <p className="text-sm font-bold text-muted-foreground">Loading providers...</p>
+                  <div className="flex min-h-[30vh] items-center justify-center">
+                    <ShillmongerLoader className="w-full max-w-md" label="Loading providers" />
                   </div>
                 ) : savedProviders.length === 0 ? (
                   <div className="flex flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-border/60 py-12 text-center">

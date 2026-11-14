@@ -6,7 +6,6 @@ import { Bar, BarChart, CartesianGrid, Cell, ReferenceLine, XAxis } from "rechar
 import {
   ArrowDownRight,
   ArrowUpRight,
-  BarChart3,
   CheckCircle2,
   Radio,
   Trophy,
@@ -16,6 +15,7 @@ import {
 } from "lucide-react";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import ShillmongerLoader from "@/components/ShillmongerLoader";
 import {
   ChartContainer,
   ChartTooltip,
@@ -327,8 +327,8 @@ export default function AdminAnalyticsPage() {
           {mock ? (
             <PnlBarChart data={daily} tickFormatter={shortDate} labelFormatter={longDate} height="h-[280px]" />
           ) : (
-            <div className="flex h-[280px] items-center justify-center text-muted-foreground">
-              <BarChart3 className="h-6 w-6 animate-pulse" />
+            <div className="flex h-[280px] items-center justify-center">
+              <ShillmongerLoader className="w-full max-w-xs" label="Loading chart" />
             </div>
           )}
         </CardContent>

@@ -21,6 +21,8 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import ShillmongerLoader from "@/components/ShillmongerLoader";
+import { useMainContentLoading } from "@/components/UserDashboard/MainContentLoading";
 
 const plexMono = IBM_Plex_Mono({
   weight: ["400", "500", "600"],
@@ -370,6 +372,7 @@ export default function AdminUsersPage() {
   const [roleFilter, setRoleFilter] = useState<"all" | "user" | "admin">("all");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "suspended" | "inactive">("all");
   const [page, setPage] = useState(1);
+  const setMainLoading = useMainContentLoading();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -389,6 +392,13 @@ export default function AdminUsersPage() {
     const t = setTimeout(() => void load(), 0);
     return () => clearTimeout(t);
   }, [load]);
+
+  // Keep the layout loader visible while users are loading.
+  useEffect(() => {
+    setMainLoading(loading);
+  }, [loading, setMainLoading]);
+
+  useEffect(() => () => setMainLoading(false), [setMainLoading]);
 
   /* stats — same shape as /UserDashboard/dashboard StatCard */
   const stats = useMemo(() => {
@@ -531,8 +541,8 @@ export default function AdminUsersPage() {
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center gap-2 rounded-2xl border border-border/60 bg-muted/20 py-16 text-muted-foreground">
-          <Loader2 className="h-5 w-5 animate-spin" /> Loading users…
+        <div className="flex min-h-[40vh] items-center justify-center">
+          <ShillmongerLoader className="w-full max-w-md" label="Loading users" />
         </div>
       ) : users.length === 0 ? (
         <Card className="border-violet-500/20">

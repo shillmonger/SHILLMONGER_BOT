@@ -35,6 +35,47 @@ export async function GET(request: Request) {
       TelegramProvider.find().select('groupId groupName profileImage isActive').lean(),
     ]);
 
+    const pairKey = (chatId: unknown, messageId: unknown) => {
+      const chat = Number(chatId);
+      const message = Number(messageId);
+      if (!Number.isInteger(chat) || !Number.isInteger(message)) return null;
+      return `${chat}:${message}`;
+    };
+
+    const pairFilters: { chat_id: number; message_id: number }[] = [];
+    const seenPairs = new Set<string>();
+    for (const message of messages) {
+      const chatId = Number(message.chat_id);
+      const messageId = Number(message.message_id);
+      if (!Number.isInteger(chatId) || !Number.isInteger(messageId)) continue;
+      const key = `${chatId}:${messageId}`;
+      if (seenPairs.has(key)) continue;
+      seenPairs.add(key);
+      pairFilters.push({ chat_id: chatId, message_id: messageId });
+    }
+
+    const [signals, pendingSignals] = pairFilters.length
+      ? await Promise.all([
+          db
+            .collection('signals')
+            .find({ $or: pairFilters }, { projection: { chat_id: 1, message_id: 1, status: 1 } })
+            .toArray(),
+          db
+            .collection('pending_signals')
+            .find({ $or: pairFilters }, { projection: { chat_id: 1, message_id: 1 } })
+            .toArray(),
+        ])
+      : [[], []];
+
+    const signalByPair = new Map(
+      signals.map((signal) => [pairKey(signal.chat_id, signal.message_id), signal])
+    );
+    const pendingByPair = new Set(
+      pendingSignals
+        .map((signal) => pairKey(signal.chat_id, signal.message_id))
+        .filter((key): key is string => key !== null)
+    );
+
     const providerByGroupId = new Map(
       providers.map((p) => [String(p.groupId), p])
     );
@@ -44,11 +85,19 @@ export async function GET(request: Request) {
       logs: messages.map((m) => {
         const chatId = String(m.chat_id ?? '');
         const provider = providerByGroupId.get(chatId) ?? null;
+        const key = pairKey(m.chat_id, m.message_id);
+        const signal = key ? signalByPair.get(key) : undefined;
+        const signalStatus = signal
+          ? String(signal.status ?? 'RECEIVED').toUpperCase() || 'RECEIVED'
+          : key && pendingByPair.has(key)
+            ? 'PENDING'
+            : 'NO SIGNAL';
         return {
           id: String(m._id),
           chatId,
           messageId: m.message_id ?? null,
           processedAt: m.processed_at ?? null,
+          signalStatus,
           provider: provider
             ? {
                 groupId: provider.groupId,

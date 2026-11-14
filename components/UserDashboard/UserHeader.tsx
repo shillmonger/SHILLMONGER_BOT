@@ -8,11 +8,15 @@ import {
   Bell,
   BellOff,
   ArrowRight,
+  Search,
+  X,
+  Coins,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useTheme } from "next-themes";
 import { useMounted } from "@/hooks/useMounted";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { IBM_Plex_Mono } from "next/font/google";
 
 const plexMono = IBM_Plex_Mono({
@@ -23,6 +27,8 @@ const plexMono = IBM_Plex_Mono({
 
 interface HeaderProps {
   onLeftClick: () => void;
+  /** Optional custom search handler. If omitted, goes to /UserDashboard/search?q=... */
+  onSearch?: (query: string) => void;
 }
 
 interface UserData {
@@ -42,7 +48,10 @@ interface NotificationItem {
 
 export default function UserHeader({
   onLeftClick,
+  onSearch,
 }: HeaderProps) {
+  const router = useRouter();
+
   // Theme state
   const mounted = useMounted();
   const { theme, setTheme } = useTheme();
@@ -54,6 +63,15 @@ export default function UserHeader({
     avatar: "https://github.com/shadcn.png",
   });
   const [isLoading, setIsLoading] = useState(true);
+
+  // Available credits
+  const [credits, setCredits] = useState<number>(0);
+
+  // Search
+  const [query, setQuery] = useState("");
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const mobileSearchRef = useRef<HTMLInputElement>(null);
 
   // Notification count
   const [notificationCount, setNotificationCount] = useState(0);
@@ -78,6 +96,10 @@ export default function UserHeader({
             email: userData.email || "",
             avatar: userData.avatar || "",
           });
+
+          // NOTE: change `credits` to whatever field your API returns
+          // (e.g. userData.balance, userData.creditBalance)
+          setCredits(Number(userData.credits) || 0);
 
           // Fetch notification count
           await fetchNotificationCount(userData._id);
@@ -129,6 +151,42 @@ export default function UserHeader({
     };
   }, [notifOpen]);
 
+  // Ctrl/Cmd + K focuses search (opens the overlay on small screens)
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        if (window.innerWidth < 640) {
+          setMobileSearchOpen(true);
+        } else {
+          searchRef.current?.focus();
+        }
+      }
+    };
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, []);
+
+  // Focus the mobile input when the overlay opens + close on Escape
+  useEffect(() => {
+    if (!mobileSearchOpen) return;
+    mobileSearchRef.current?.focus();
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMobileSearchOpen(false);
+    };
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [mobileSearchOpen]);
+
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const q = query.trim();
+    if (!q) return;
+    if (onSearch) onSearch(q);
+    else router.push(`/UserDashboard/search?q=${encodeURIComponent(q)}`);
+    setMobileSearchOpen(false);
+  };
+
   // Default profile image constant
   const defaultProfileImage = "https://github.com/shadcn.png";
 
@@ -137,27 +195,111 @@ export default function UserHeader({
       {/* soft purple glow — matches UserSidebar */}
       <div className="pointer-events-none absolute -top-16 -left-16 h-48 w-48 rounded-full bg-violet-600/15 blur-[80px]" />
       <div className="pointer-events-none absolute -bottom-16 -right-16 h-48 w-48 rounded-full bg-purple-600/10 blur-[80px]" />
-      <div className="relative flex items-center gap-3 flex-shrink-0">
+
+      {/* Mobile search overlay */}
+      {mobileSearchOpen && (
+        <form
+          onSubmit={handleSearchSubmit}
+          role="search"
+          className="absolute inset-0 z-20 flex items-center gap-2 bg-background px-4 sm:hidden"
+        >
+          <Search className="h-4 w-4 shrink-0 text-violet-600 dark:text-violet-400" />
+          <input
+            ref={mobileSearchRef}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            type="search"
+            placeholder="Search..."
+            aria-label="Search"
+            className="h-10 min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+          />
+          <button
+            type="button"
+            onClick={() => setMobileSearchOpen(false)}
+            aria-label="Close search"
+            className="rounded-lg p-2 transition-colors hover:bg-violet-500/10"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </form>
+      )}
+
+      {/* LEFT: menu + search */}
+      <div className="relative flex min-w-0 flex-1 items-center gap-3">
         <button
-          className="lg:hidden p-2 rounded-xl hover:bg-violet-500/10 transition-colors"
+          className="lg:hidden p-2 rounded-xl hover:bg-violet-500/10 transition-colors flex-shrink-0"
           onClick={onLeftClick}
           aria-label="Open menu"
         >
           <Menu className="h-5 w-5" />
         </button>
 
-        <div className="space-y-0.5">
-          <p
-            className={`${plexMono.className} text-[8px] md:text-[10px] text-violet-600 dark:text-violet-400 font-medium uppercase tracking-[0.2em] hidden xs:block`}
+        {/* Search bar (sm and up) */}
+        <form
+          onSubmit={handleSearchSubmit}
+          role="search"
+          className="group relative hidden w-full max-w-sm sm:block"
+        >
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground transition-colors group-focus-within:text-violet-600 dark:group-focus-within:text-violet-400" />
+          <input
+            ref={searchRef}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            type="search"
+            placeholder="Search..."
+            aria-label="Search"
+            className="h-10 w-full rounded-xl border border-violet-500/20 bg-secondary/60 pl-9 pr-16 text-sm text-foreground outline-none transition-all placeholder:text-muted-foreground focus:border-violet-500/60 focus:bg-background focus:ring-2 focus:ring-violet-500/20 [&::-webkit-search-cancel-button]:appearance-none"
+          />
+          <kbd
+            className={`${plexMono.className} pointer-events-none absolute right-2.5 top-1/2 hidden -translate-y-1/2 rounded-md border border-border bg-background/70 px-1.5 py-0.5 text-[10px] text-muted-foreground md:block`}
           >
-            [ // Member Experience ]
-          </p>
-        </div>
+            Ctrl K
+          </kbd>
+        </form>
+
+        {/* Mobile search button */}
+        <button
+          type="button"
+          onClick={() => setMobileSearchOpen(true)}
+          aria-label="Open search"
+          className="rounded-lg bg-secondary p-2 transition-colors hover:bg-violet-500/15 sm:hidden"
+        >
+          <Search className="h-5 w-5" />
+        </button>
+
+        <p
+          className={`${plexMono.className} hidden whitespace-nowrap text-[10px] font-medium uppercase tracking-[0.2em] text-violet-600 dark:text-violet-400 2xl:block`}
+        >
+          [ // Member Experience ]
+        </p>
       </div>
 
-      <div className="relative flex items-center gap-2 sm:gap-2">
+      {/* RIGHT */}
+      <div className="relative flex flex-shrink-0 items-center gap-2 sm:gap-2">
+        {/* Available credits */}
+        <Link
+          href="/UserDashboard/credits"
+          title="Available credits"
+          aria-label={`Available credits: ${credits}`}
+          className="group flex items-center gap-2 rounded-lg border border-violet-500/25 bg-gradient-to-r from-violet-600/10 to-purple-600/10 px-2.5 py-2 transition-colors hover:border-violet-500/50 hover:from-violet-600/20 hover:to-purple-600/20"
+        >
+          <Coins className="h-4 w-4 text-violet-600 dark:text-violet-400" />
+          {isLoading ? (
+            <span className="h-3 w-8 animate-pulse rounded bg-muted" />
+          ) : (
+            <span
+              className={`${plexMono.className} text-xs font-semibold tabular-nums text-foreground`}
+            >
+              {credits.toLocaleString("en-US")}
+              <span className="ml-1 hidden text-[10px] font-medium uppercase tracking-wider text-muted-foreground sm:inline">
+                credits
+              </span>
+            </span>
+          )}
+        </Link>
+
         {/* Theme toggle */}
-        <button
+        {/* <button
           onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
           className="p-2 rounded-lg cursor-pointer bg-secondary hover:bg-violet-500/15 transition-colors"
           title="Toggle theme"
@@ -168,7 +310,7 @@ export default function UserHeader({
             ) : (
               <Moon className="w-5 h-5 text-foreground" />
             ))}
-        </button>
+        </button> */}
 
         {/* Notification Bell + Dropdown */}
         <div className="relative" ref={notifRef}>
@@ -178,7 +320,7 @@ export default function UserHeader({
             aria-haspopup="true"
             aria-expanded={notifOpen}
             aria-label="Notifications"
-            className={`p-2 rounded-lg relative cursor-pointer transition-colors ${notifOpen
+            className={`p-2 rounded-xl relative cursor-pointer transition-colors ${notifOpen
                 ? "bg-gradient-to-r from-violet-600 to-purple-600 text-white shadow-lg shadow-violet-900/30"
                 : "bg-secondary hover:bg-violet-500/15"
               }`}

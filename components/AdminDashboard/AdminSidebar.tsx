@@ -12,14 +12,20 @@ import {
   ChartColumn,
   UsersRound,
   Layers,
+  Podium,
+  UserRoundCheck,
+  ChartNoAxesColumn,
+  Trophy,
   Settings,
   Lock,
   LogOut,
   ChevronDown,
+  ChartSpline,
   BadgeCheck,
   House,
   KeyRound,
   UserRoundKey,
+  Activity,
   PieChart,
   MailSearch,
   CircleGauge,
@@ -68,6 +74,7 @@ export default function AdminSidebar({
 
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
     "Bot Settings": false,
+    "Trading Activity": false,
     "Audit logs": true,
   });
 
@@ -91,9 +98,9 @@ export default function AdminSidebar({
   }, [showLogoutConfirm, countdown]);
 
   const navItems: NavItem[] = [
-    { name: "Dashboard", icon: House, href: `${basePath}/dashboard` },
+    { name: "Admin Dashboard", icon: House, href: `${basePath}/dashboard` },
     { name: "TG Providers", icon: Send, href: `${basePath}/providers` },
-    { name: "Bot Billings", icon: BadgeCheck, href: `${basePath}/bot-billing` },
+    { name: "Bot Payments", icon: BadgeCheck, href: `${basePath}/bot-billing` },
     { name: "Broker Control", icon: DatabaseZap, href: `${basePath}/broker-control` },
     {
       name: "Bot Settings",
@@ -105,10 +112,16 @@ export default function AdminSidebar({
         { name: "Position Limits", icon: CircleGauge, href: `${basePath}/BotSettings/position-limits` },
       ],
     },
-    { name: "Trade Signals", icon: ChartCandlestick, href: `${basePath}/trade-signals` },
-    { name: "Trade Executions", icon: ListChecks, href: `${basePath}/trade-executions` },
-    { name: "Signal Evaluation", icon: Microscope, href: `${basePath}/signal-evaluation` },
     { name: "Total Analytics", icon: PieChart, href: `${basePath}/analytics` },
+   {
+  name: "Trading Activity",
+  icon: Activity,
+  children: [
+    { name: "Signals", icon: ChartColumn, href: `${basePath}/TradingActivity/trade-signals` },
+    { name: "Evaluation", icon: ChartNoAxesColumn, href: `${basePath}/TradingActivity/signal-evaluation` },
+    { name: "Executions", icon: ChartSpline, href: `${basePath}/TradingActivity/trade-executions` },
+  ],
+},
     {
       name: "Audit logs",
       icon: KeyRound,
@@ -116,6 +129,7 @@ export default function AdminSidebar({
         { name: "Processed Logs", icon: MailSearch, href: `${basePath}/AuditLogs/processed-logs` },
       ],
     },
+    { name: "Group Rankings", icon: Trophy, href: `${basePath}/group-rankings` },
     { name: "User Management", icon: UsersRound, href: `${basePath}/user-management` },
     { name: "Switch to Trader", icon: Lock, href: `/UserDashboard/dashboard` },
   ];

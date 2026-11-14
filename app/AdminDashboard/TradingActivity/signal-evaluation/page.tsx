@@ -9,7 +9,6 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
-  Loader2,
   Microscope,
   RefreshCw,
   Search,
@@ -18,6 +17,8 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import ShillmongerLoader from "@/components/ShillmongerLoader";
+import { useMainContentLoading } from "@/components/UserDashboard/MainContentLoading";
 
 const plexMono = IBM_Plex_Mono({
   weight: ["400", "500", "600"],
@@ -110,6 +111,7 @@ export default function SignalEvaluationPage() {
   const [eligibleFilter, setEligibleFilter] = useState<EligibleFilter>("all");
   const [envFilter, setEnvFilter] = useState<EnvFilter>("all");
   const [page, setPage] = useState(1);
+  const setMainLoading = useMainContentLoading();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -129,6 +131,13 @@ export default function SignalEvaluationPage() {
     const t = setTimeout(() => void load(), 0);
     return () => clearTimeout(t);
   }, [load]);
+
+  // Keep the layout loader visible while evaluations are loading.
+  useEffect(() => {
+    setMainLoading(loading);
+  }, [loading, setMainLoading]);
+
+  useEffect(() => () => setMainLoading(false), [setMainLoading]);
 
   const stats = useMemo(() => {
     const eligible = rows.filter((r) => r.eligible).length;
@@ -216,8 +225,8 @@ export default function SignalEvaluationPage() {
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center gap-2 rounded-2xl border border-border/60 bg-muted/20 py-16 text-muted-foreground">
-          <Loader2 className="h-5 w-5 animate-spin" /> Loading evaluations…
+        <div className="flex min-h-[40vh] items-center justify-center">
+          <ShillmongerLoader className="w-full max-w-md" label="Loading evaluations" />
         </div>
       ) : rows.length === 0 ? (
         <Card className="border-violet-500/20">

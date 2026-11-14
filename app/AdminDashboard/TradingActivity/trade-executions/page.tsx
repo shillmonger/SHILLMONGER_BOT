@@ -10,13 +10,14 @@ import {
   ChevronRight,
   HelpCircle,
   ListChecks,
-  Loader2,
   RefreshCw,
   Search,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import ShillmongerLoader from "@/components/ShillmongerLoader";
+import { useMainContentLoading } from "@/components/UserDashboard/MainContentLoading";
 
 const plexMono = IBM_Plex_Mono({
   weight: ["400", "500", "600"],
@@ -153,6 +154,7 @@ export default function TradeExecutionsPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [envFilter, setEnvFilter] = useState<EnvFilter>("all");
   const [page, setPage] = useState(1);
+  const setMainLoading = useMainContentLoading();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -172,6 +174,13 @@ export default function TradeExecutionsPage() {
     const t = setTimeout(() => void load(), 0);
     return () => clearTimeout(t);
   }, [load]);
+
+  // Keep the layout loader visible while executions are loading.
+  useEffect(() => {
+    setMainLoading(loading);
+  }, [loading, setMainLoading]);
+
+  useEffect(() => () => setMainLoading(false), [setMainLoading]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -257,8 +266,8 @@ export default function TradeExecutionsPage() {
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center gap-2 rounded-2xl border border-border/60 bg-muted/20 py-16 text-muted-foreground">
-          <Loader2 className="h-5 w-5 animate-spin" /> Loading executions…
+        <div className="flex min-h-[40vh] items-center justify-center">
+          <ShillmongerLoader className="w-full max-w-md" label="Loading executions" />
         </div>
       ) : rows.length === 0 ? (
         <Card className="border-violet-500/20">

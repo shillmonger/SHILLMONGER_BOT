@@ -11,7 +11,6 @@ import {
   Clock,
   Hash,
   Inbox,
-  Loader2,
   MessageSquare,
   Radio,
   RefreshCw,
@@ -22,6 +21,8 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import ShillmongerLoader from "@/components/ShillmongerLoader";
+import { useMainContentLoading } from "@/components/UserDashboard/MainContentLoading";
 
 const plexMono = IBM_Plex_Mono({
   weight: ["400", "500", "600"],
@@ -131,6 +132,7 @@ export default function AdminSignalsPage() {
   const [query, setQuery] = useState("");
   const [dirFilter, setDirFilter] = useState<"all" | "BUY" | "SELL">("all");
   const [page, setPage] = useState(1);
+  const setMainLoading = useMainContentLoading();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -151,6 +153,13 @@ export default function AdminSignalsPage() {
     const t = setTimeout(() => void load(), 0);
     return () => clearTimeout(t);
   }, [load]);
+
+  // Keep the layout loader visible while signals are loading.
+  useEffect(() => {
+    setMainLoading(loading);
+  }, [loading, setMainLoading]);
+
+  useEffect(() => () => setMainLoading(false), [setMainLoading]);
 
   /* filtering + pagination */
   const filtered = useMemo(() => {
@@ -243,8 +252,8 @@ export default function AdminSignalsPage() {
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center gap-2 rounded-2xl border border-border/60 bg-muted/20 py-16 text-muted-foreground">
-          <Loader2 className="h-5 w-5 animate-spin" /> Loading signals…
+        <div className="flex min-h-[40vh] items-center justify-center">
+          <ShillmongerLoader className="w-full max-w-md" label="Loading signals" />
         </div>
       ) : rows.length === 0 ? (
         <Card className="border-violet-500/20">
@@ -270,7 +279,7 @@ export default function AdminSignalsPage() {
                 <tr className="border-b border-border/50 bg-muted/20">
                   <th className={TH}>Symbol</th>
                   <th className={TH}>Direction</th>
-                  <th className={TH}>Order</th>
+                  <th className={TH}>Order Type</th>
                   <th className={`${TH} text-right`}>Entry</th>
                   <th className={`${TH} text-right`}>Stop Loss</th>
                   <th className={`${TH} text-right`}>TPs</th>

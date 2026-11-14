@@ -12,6 +12,8 @@ import {
 import { IBM_Plex_Mono } from "next/font/google";
 
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
+import ShillmongerLoader from "@/components/ShillmongerLoader";
+import { useMainContentLoading } from "@/components/UserDashboard/MainContentLoading";
 
 const plexMono = IBM_Plex_Mono({ weight: ["400", "500", "600"], subsets: ["latin"], display: "swap" });
 
@@ -146,6 +148,14 @@ export default function TradeHistoryPage() {
   const [trades, setTrades] = useState<Trade[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const setMainLoading = useMainContentLoading();
+
+  // Keep the layout loader visible until trade history finishes loading.
+  useEffect(() => {
+    setMainLoading(loading);
+  }, [loading, setMainLoading]);
+
+  useEffect(() => () => setMainLoading(false), [setMainLoading]);
 
   useEffect(() => {
     let cancelled = false;
@@ -185,7 +195,7 @@ export default function TradeHistoryPage() {
     filter === "all" ? true : filter === "winning" ? t.status === "WIN" : filter === "losing" ? t.status === "LOSS" : filter === "open" ? t.status === "OPEN" : t.status !== "OPEN");
 
   return (
-    <main className="min-h-screen bg-background text-foreground">
+    <main className="min-h-screen text-foreground">
       <div className="mx-auto max-w-7xl space-y-6 py-4">
         <div>
           <p
@@ -249,7 +259,13 @@ export default function TradeHistoryPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/40">
-                {loading && <tr><td colSpan={8} className="py-10 text-center text-sm text-muted-foreground">Loading trade history…</td></tr>}
+                {loading && (
+                  <tr>
+                    <td colSpan={8} className="py-16 text-center">
+                      <ShillmongerLoader className="mx-auto w-full max-w-xs" label="Loading trade history" />
+                    </td>
+                  </tr>
+                )}
                 {!loading && error && <tr><td colSpan={8} className="py-10 text-center text-sm text-red-600 dark:text-red-400">{error}</td></tr>}
                 {!loading && !error && rows.length === 0 && <tr><td colSpan={8} className="py-10 text-center text-sm text-muted-foreground">No trades match this filter.</td></tr>}
                 {rows.map((t) => (
