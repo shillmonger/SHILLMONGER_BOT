@@ -85,6 +85,9 @@ function notificationIcon(n: ApiNotification) {
   return <span className={wrap}><Bell className={cls} /></span>;
 }
 
+const truncate = (value: string, max: number) =>
+  value.length > max ? `${value.slice(0, max)}..............` : value;
+
 function timeAgo(iso: string) {
   const diff = Date.now() - new Date(iso).getTime();
   const m = Math.floor(diff / 60_000);
@@ -521,8 +524,8 @@ export default function UserHeader({
           <div className="hidden sm:block text-right">
             {!isLoading ? (
               <>
-                <p className="text-xs font-black uppercase tracking-widest text-foreground">{user.userName}</p>
-                <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{user.email}</p>
+                <p className="text-xs font-black uppercase tracking-widest text-foreground">{truncate(user.userName, 15)}</p>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{truncate(user.email, 25)}</p>
               </>
             ) : (
               <>

@@ -8,8 +8,10 @@ import { ArrowUpRight, ChartSpline, TrendingUp, ShieldCheck } from "lucide-react
 
 const IMAGES = [
   "https://i.postimg.cc/ZnDX5Ff3/5.jpg",
-  "https://i.postimg.cc/MT3ww0Cb/bull1.jpg",
-  "https://i.postimg.cc/7Y24v2m2/bull2.jpg",
+  "https://i.postimg.cc/vZX5X46B/1.jpg",
+  "https://i.postimg.cc/bvBkc4TC/2.jpg",
+  "https://i.postimg.cc/T1rDb16d/4.jpg",
+  "https://i.postimg.cc/Dz84gBTd/5.jpg",
 ];
 
 export default function GiftMember({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {

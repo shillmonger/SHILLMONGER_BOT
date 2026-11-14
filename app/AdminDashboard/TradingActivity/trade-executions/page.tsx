@@ -8,7 +8,6 @@ import {
   ArrowUpRight,
   ChevronLeft,
   ChevronRight,
-  HelpCircle,
   ListChecks,
   RefreshCw,
   Search,
@@ -84,6 +83,12 @@ const fmtDT = (iso?: string | null) => {
 
 const isOpenStatus = (s?: string | null) =>
   s === "open" || s === "submitted" || s === "pending";
+
+const maskEmail = (email?: string | null) => {
+  if (!email) return null;
+  const local = email.split("@")[0];
+  return local.length > 11 ? `${local.slice(0, 11)}…` : local;
+};
 const isFailedStatus = (s?: string | null) =>
   s === "rejected" || s === "failed" || s === "cancelled";
 
@@ -307,7 +312,6 @@ export default function TradeExecutionsPage() {
                 ) : pageRows.map((r) => {
                   const pnl = isOpenStatus(r.status) ? r.unrealizedPnl : r.realizedPnl;
                   const groupName = r.groupName ?? r.provider?.groupName ?? null;
-                  const groupImage = r.provider?.profileImage ?? null;
                   return (
                     <tr key={r.id} className="transition-colors hover:bg-muted/30">
                       <td className={TD}>
@@ -315,25 +319,15 @@ export default function TradeExecutionsPage() {
                           <Avatar name={r.userName ?? r.userEmail ?? "?"} src={r.userAvatar} />
                           <div className="min-w-0">
                             <p className="truncate text-sm font-bold">{r.userName ?? "Unknown user"}</p>
-                            <p className="truncate text-xs text-muted-foreground">{r.userEmail ?? r.userId ?? "—"}</p>
+                            <p className="truncate text-xs text-muted-foreground">{maskEmail(r.userEmail) ?? r.userId ?? "—"}</p>
                           </div>
                         </div>
                       </td>
                       <td className={TD}>
                         {groupName || r.chatId != null ? (
-                          <div className="flex items-center gap-3">
-                            {groupImage ? (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img src={groupImage} alt={groupName ?? "group"} className="h-8 w-8 shrink-0 rounded-full border border-violet-500/20 object-cover" />
-                            ) : (
-                              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-dashed border-border/60 text-muted-foreground">
-                                <HelpCircle className="h-3.5 w-3.5" />
-                              </span>
-                            )}
-                            <div className="min-w-0">
-                              <p className="truncate text-sm font-bold">{groupName ?? "Unknown group"}</p>
-                              <p className="truncate text-xs text-muted-foreground">{r.chatId ?? "—"}</p>
-                            </div>
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-bold">{groupName ?? "Unknown group"}</p>
+                            <p className="truncate text-xs text-muted-foreground">{r.chatId ?? "—"}</p>
                           </div>
                         ) : (
                           <span className="text-muted-foreground">—</span>

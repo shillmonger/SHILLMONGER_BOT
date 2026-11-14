@@ -9,6 +9,7 @@ import {
   ChevronRight,
   OctagonX,
   Pause,
+  GamepadDirectional,
   Play,
   ShieldAlert,
   Square,
@@ -350,11 +351,11 @@ export default function BotStatusOrb() {
           onClick={() => setOpen((o) => !o)}
           aria-label={`Bot status: ${display.label}. Click for controls.`}
           aria-expanded={open}
-          className="group relative block h-15 w-15 cursor-pointer rounded-full transition-transform duration-200 hover:scale-105 active:scale-95"
+          className="group relative block h-13 w-13 cursor-pointer rounded-full transition-transform duration-200 hover:scale-105 active:scale-95"
         >
           {/* rotating dashed orbit ring */}
           <span
-            className={`absolute -inset-1 rounded-full border-2 border-dashed ${display.ring} animate-[spin_7s_linear_infinite]`}
+            className={`absolute -inset-1 rounded-full border-2 border-dashed ${display.ring} animate-[spin_5s_linear_infinite]`}
           />
           {/* pulse ring while running */}
           {effective === "running" && !emergency && (

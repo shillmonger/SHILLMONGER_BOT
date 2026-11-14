@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { IBM_Plex_Mono } from "next/font/google";
 import {
@@ -13,6 +13,9 @@ import {
   TrendingUp,
   Wallet,
   XCircle,
+   Bot,
+  Zap,
+  Activity,
 } from "lucide-react";
 
 const plexMono = IBM_Plex_Mono({
@@ -41,6 +44,7 @@ interface TradeRow {
   entry: number;
   lotSize: number;
   date: string;
+  closedAt: string | null;
   profit: number;
   status: "WIN" | "LOSS" | "OPEN";
 }
@@ -68,11 +72,8 @@ interface ActivePlan {
   duration: string;
   expires: string;
   status: "APPROVED" | "PENDING" | "REJECTED";
-}
-
-interface DayPoint {
-  date: string; // ISO date
-  value: number; // daily profit (USD)
+  remainingCredits?: number;
+  totalCredits?: number;
 }
 
 /* Shape returned by /api/user/trading/executions (TRADE_EXECUTIONS docs) */
@@ -93,8 +94,6 @@ interface ExecDoc {
   createdAt?: string | null;
 }
 
-type Mode = "demo" | "live";
-
 interface DashboardData {
   totalTrades: number;
   billing: number;
@@ -105,13 +104,12 @@ interface DashboardData {
   tradingCalendar: CalendarItem[];
   calendarAttribution?: string;
   news: NewsItem[];
-  performance: Record<Mode, DayPoint[]>;
   recentTrades: TradeRow[];
 }
 
 // TODO: replace with real thumbnails per article once the news API is wired up.
 const MOCK_NEWS_IMAGE =
-  "https://i.postimg.cc/MT3ww0Cb/bull1.jpg";
+  "https://i.postimg.cc/ZnDX5Ff3/5.jpg";
 
 const MOCK_NEWS: NewsItem[] = [
   { id: "NEWS-001", title: "EUR/USD Analysis: Euro Loses Momentum Following the U.S. PCE Release", source: "Forexcom", image: MOCK_NEWS_IMAGE },
@@ -208,13 +206,6 @@ function formatCurrency(value: number) {
   })}`;
 }
 
-function shortDate(date: string) {
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-  }).format(new Date(date));
-}
-
 const IMPACT_CLS: Record<CalendarItem["impact"], string> = {
   High: "text-rose-600 dark:text-rose-400",
   Medium: "text-amber-600 dark:text-amber-400",
@@ -246,60 +237,10 @@ function toRecentTrade(e: ExecDoc): TradeRow {
     entry: e.entryLevel ?? 0,
     lotSize: e.size ?? 0,
     date: execTimestamp(e),
+    closedAt: e.closedAt ?? null,
     profit,
     status: open ? "OPEN" : profit >= 0 ? "WIN" : "LOSS",
   };
-}
-
-/** Daily realized P/L per environment, starting at the user's first
- *  execution (never before) and capped at `days` back. */
-function buildPerformanceSeries(
-  execs: ExecDoc[],
-  days = 90,
-): Record<Mode, DayPoint[]> {
-  const DAY = 24 * 60 * 60 * 1000;
-  const now = Date.now();
-  const earliestAllowed = now - (days - 1) * DAY;
-
-  // First day the user ever executed — the axis must not show days
-  // before trading started.
-  const firstTrade = execs.reduce((min, e) => {
-    const t = Date.parse(e.createdAt ?? e.openedAt ?? e.closedAt ?? "");
-    return Number.isFinite(t) && t < min ? t : min;
-  }, Infinity);
-  const firstDay = Number.isFinite(firstTrade)
-    ? Math.floor(firstTrade / DAY) * DAY
-    : earliestAllowed;
-  const start = Math.max(earliestAllowed, firstDay);
-  const count = Math.max(
-    1,
-    Math.min(days, Math.floor((now - start) / DAY) + 1)
-  );
-
-  const buckets: Record<Mode, Map<string, number>> = {
-    demo: new Map(),
-    live: new Map(),
-  };
-
-  for (const e of execs) {
-    const env = e.environment === "live" ? "live" : "demo";
-    const pnl = execProfit(e);
-    if (!pnl) continue;
-    const t = Date.parse(execTimestamp(e));
-    if (!Number.isFinite(t) || t < start) continue;
-    const key = new Date(t).toISOString().slice(0, 10);
-    buckets[env].set(key, (buckets[env].get(key) ?? 0) + pnl);
-  }
-
-  const out = {} as Record<Mode, DayPoint[]>;
-  for (const mode of ["demo", "live"] as Mode[]) {
-    out[mode] = Array.from({ length: count }, (_, i) => {
-      const date = new Date(start + i * DAY);
-      const key = date.toISOString().slice(0, 10);
-      return { date: date.toISOString(), value: buckets[mode].get(key) ?? 0 };
-    });
-  }
-  return out;
 }
 
 /* ───────────────── Building blocks ───────────────── */
@@ -438,269 +379,6 @@ function NewsRow({ item }: { item: NewsItem }) {
 }
 
 
-/* ───────────────── Interactive bar chart (Demo / Live) ───────────────── */
-
-type Period = "7" | "30" | "90";
-
-function Segmented<T extends string>({ options, value, onChange }: { options: { key: T; label: string }[]; value: T; onChange: (v: T) => void }) {
-  return (
-    <div className="inline-flex rounded-xl border border-border/60 bg-muted/20 p-1">
-      {options.map((o) => (
-        <button
-          key={o.key} type="button" onClick={() => onChange(o.key)} aria-pressed={value === o.key}
-          className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
-            value === o.key ? "bg-gradient-to-r from-violet-600 to-purple-600 text-white shadow" : "text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          {o.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-const TONE_META = {
-  profit: {
-    label: "Profit",
-    bar: "bg-emerald-500",
-    dot: "bg-emerald-500",
-    text: "text-emerald-600 dark:text-emerald-400",
-  },
-  loss: {
-    label: "Loss",
-    bar: "bg-red-500",
-    dot: "bg-red-500",
-    text: "text-red-600 dark:text-red-400",
-  },
-  flat: {
-    label: "No activity",
-    bar: "bg-zinc-400/40",
-    dot: "bg-zinc-400",
-    text: "text-muted-foreground",
-  },
-} as const;
-
-type Tone = keyof typeof TONE_META;
-const toneOf = (value: number): Tone =>
-  value > 0 ? "profit" : value < 0 ? "loss" : "flat";
-
-function PerformanceBarChart({
-  series,
-}: {
-  series: Record<Mode, DayPoint[]>;
-}) {
-  const [mode, setMode] = useState<Mode>("demo");
-  const [period, setPeriod] = useState<Period>("90");
-  const [active, setActive] = useState<number | null>(null);
-  const [compact, setCompact] = useState(false);
-
-  // Downsample bars on small screens so ~90 daily bars don't collapse into
-  // unreadable slivers. Deferred setState to satisfy react-hooks rules.
-  useEffect(() => {
-    const mq = window.matchMedia("(max-width: 640px)");
-    const apply = () => setCompact(mq.matches);
-    const t = setTimeout(apply, 0);
-    mq.addEventListener("change", apply);
-    return () => {
-      clearTimeout(t);
-      mq.removeEventListener("change", apply);
-    };
-  }, []);
-
-  // Window the full 90-day series to the selected period.
-  const points = useMemo(
-    () => series[mode].slice(-Number(period)),
-    [series, mode, period]
-  );
-
-  // On mobile keep roughly every Nth point (~15 bars max) so each bar stays
-  // readable; desktop renders the full daily series.
-  const displayPoints = useMemo(() => {
-    if (!compact || points.length <= 20) return points;
-    const stride = Math.ceil(points.length / 15);
-    const out = points.filter((_, i) => i % stride === 0);
-    if (out[out.length - 1] !== points[points.length - 1]) out.push(points[points.length - 1]);
-    return out;
-  }, [points, compact]);
-
-  const totals = useMemo(
-    () => ({
-      demo: series.demo.slice(-Number(period)).reduce((sum, p) => sum + p.value, 0),
-      live: series.live.slice(-Number(period)).reduce((sum, p) => sum + p.value, 0),
-    }),
-    [series, period],
-  );
-
-  const maxAbs = useMemo(() => {
-    const values = points.map((p) => Math.abs(p.value));
-    return Math.max(...values, 0);
-  }, [points]);
-
-  const activePoint = active !== null ? displayPoints[active] : null;
-  const activeTone = activePoint ? toneOf(activePoint.value) : null;
-
-  const tabs: { key: Mode; label: string }[] = [
-    { key: "demo", label: "Demo" },
-    { key: "live", label: "Live" },
-  ];
-
-  return (
-    <Card className="gap-0 overflow-hidden border-violet-500/20 p-0 shadow-sm">
-      {/* Header */}
-      <div className="flex flex-col border-b border-border/60 sm:flex-row sm:items-stretch">
-        <div className="flex-1 px-6 py-5">
-          <h2 className="text-lg font-extrabold tracking-tight">
-            Trading Performance
-          </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Showing daily profit for the last {period} days
-          </p>
-        </div>
-
-        <div className="flex items-center justify-center px-4 py-3 sm:px-6">
-          <Segmented<Period>
-            value={period}
-            onChange={setPeriod}
-            options={[
-              { key: "7", label: "7D" },
-              { key: "30", label: "30D" },
-              { key: "90", label: "90D" },
-            ]}
-          />
-        </div>
-
-        <div className="grid grid-cols-2 border-t border-border/60 sm:border-t-0">
-          {tabs.map((tab) => {
-            const selected = mode === tab.key;
-            return (
-              <button
-                key={tab.key}
-                type="button"
-                onClick={() => {
-                  setMode(tab.key);
-                  setActive(null);
-                }}
-                aria-pressed={selected}
-                className={`relative flex min-w-0 cursor-pointer flex-col items-start justify-center gap-1 border-l border-border/60 px-4 py-4 text-left transition-colors first:border-l-0 sm:min-w-[150px] sm:px-6 ${
-                  selected
-                    ? "bg-violet-500/10"
-                    : "hover:bg-muted/40"
-                }`}
-              >
-                <span className="text-xs font-medium text-muted-foreground">
-                  {tab.label}
-                </span>
-                <span className="text-xl font-extrabold leading-none tracking-tight tabular-nums">
-                  {formatCurrency(totals[tab.key])}
-                </span>
-                {selected && (
-                  <span className="absolute inset-x-0 bottom-0 h-0.5 bg-gradient-to-r from-violet-600 to-purple-500" />
-                )}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Chart */}
-      <div className="px-4 pb-4 pt-6 sm:px-6">
-        <div
-          className="relative h-64 w-full"
-          role="img"
-          aria-label={`Daily ${mode} profit for the last 3 months`}
-          onMouseLeave={() => setActive(null)}
-        >
-          {/* grid lines */}
-          {[0, 1, 2, 3].map((i) => (
-            <div
-              key={i}
-              className="absolute inset-x-0 border-t border-border/50"
-              style={{ top: `${(i / 3) * 100}%` }}
-            />
-          ))}
-
-          {/* bars */}
-          <div className="absolute inset-0 flex items-end">
-            {displayPoints.map((p, i) => {
-              const tone = toneOf(p.value);
-              const height = Math.max(4, (Math.abs(p.value) / (maxAbs || 1)) * 100);
-              const dimmed = active !== null && active !== i;
-              return (
-                <div
-                  key={p.date}
-                  className="flex h-full min-w-0 flex-1 cursor-pointer items-end px-[1px]"
-                  onMouseEnter={() => setActive(i)}
-                  onClick={() => setActive(i)}
-                >
-                  <div
-                    className={`w-full rounded-t-[2px] transition-all duration-200 ${TONE_META[tone].bar} ${
-                      dimmed ? "opacity-40" : "opacity-100"
-                    }`}
-                    style={{ height: `${height}%` }}
-                  />
-                </div>
-              );
-            })}
-          </div>
-
-          {/* tooltip */}
-          {activePoint && activeTone && active !== null && (
-            <div
-              className="pointer-events-none absolute top-0 z-10 w-36 -translate-x-1/2 rounded-xl border border-violet-500/30 bg-popover px-3 py-2 text-popover-foreground shadow-xl shadow-violet-900/20"
-              style={{
-                left: `clamp(72px, ${((active + 0.5) / displayPoints.length) * 100}%, calc(100% - 72px))`,
-              }}
-            >
-              <p className="text-[11px] font-semibold text-muted-foreground">
-                {formatDate(activePoint.date)}
-              </p>
-              <p className="mt-0.5 text-sm font-extrabold tabular-nums">
-                {activePoint.value >= 0 ? "+" : "-"}
-                {formatCurrency(activePoint.value)}
-              </p>
-              <p
-                className={`mt-0.5 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider ${TONE_META[activeTone].text}`}
-              >
-                <span
-                  className={`h-1.5 w-1.5 rounded-full ${TONE_META[activeTone].dot}`}
-                />
-                {TONE_META[activeTone].label}
-              </p>
-            </div>
-          )}
-        </div>
-
-        {/* x-axis */}
-        <div className="mt-2 flex w-full">
-          {displayPoints.map((p, i) => (
-            <div key={p.date} className="relative h-5 min-w-0 flex-1">
-              {i % Math.max(1, Math.ceil(displayPoints.length / (compact ? 5 : 15))) === 0 && (
-                <span
-                  className={`absolute left-1/2 -translate-x-1/2 whitespace-nowrap text-[10px] text-muted-foreground ${
-                    compact || i % 12 === 0 ? "" : "hidden sm:block"
-                  }`}
-                >
-                  {shortDate(p.date)}
-                </span>
-              )}
-            </div>
-          ))}
-        </div>
-
-        {/* legend */}
-        <div className="mt-3 flex flex-wrap items-center justify-center gap-x-5 gap-y-1.5 text-[11px] font-semibold text-muted-foreground">
-          {(["profit", "loss", "flat"] as Tone[]).map((l) => (
-            <span key={l} className="flex items-center gap-1.5">
-              <span className={`h-2.5 w-2.5 rounded-sm ${TONE_META[l].dot}`} />
-              {TONE_META[l].label}
-            </span>
-          ))}
-        </div>
-      </div>
-    </Card>
-  );
-}
-
 /* ───────────────── Page ───────────────── */
 
 export default function DashboardPage() {
@@ -769,7 +447,6 @@ export default function DashboardPage() {
             expires: "2026-08-04",
             status: "APPROVED",
           },
-          performance: buildPerformanceSeries(execs),
           tradingCalendar: calendar.items,
           calendarAttribution: calendar.attribution,
           news,
@@ -799,8 +476,8 @@ export default function DashboardPage() {
 
   if (!data) {
     return (
-      <div className="flex min-h-screen items-center justify-center px-4">
-        <Card className="w-full max-w-md text-center">
+      <div className="flex min-h-[calc(100dvh-8.75rem)] items-center justify-center lg:min-h-[calc(100dvh-5.25rem)]">
+        <Card className="h-[calc(100dvh-12rem)] w-full rounded-2xl text-center flex items-center justify-center">
           <CardContent className="p-8">
             <XCircle className="mx-auto h-10 w-10 text-red-500" />
             <h2 className="mt-4 text-lg font-bold">Dashboard unavailable</h2>
@@ -810,7 +487,7 @@ export default function DashboardPage() {
             <Button
               onClick={() => fetchDashboardData(true)}
               disabled={refreshing}
-              className="mt-6 bg-gradient-to-r from-violet-600 to-purple-600 text-white hover:from-violet-500 hover:to-purple-500"
+              className="mt-6 bg-gradient-to-r p-5 rounded-full text-sm from-violet-600 to-purple-600 text-white hover:from-violet-500 hover:to-purple-500"
             >
               Try Again
             </Button>
@@ -897,67 +574,157 @@ export default function DashboardPage() {
           />
         </section>
 
-        {/* ───────── Active plan ───────── */}
-        <Card className="border-violet-500/20 shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0">
-            <CardTitle className="text-xl font-bold">Your Active Plan</CardTitle>
-            <ViewAllButton href="/user-dashboard/plans" />
+       
+{/* ───────── Active Trading Plan (Compact) ───────── */}
+{(() => {
+  const CREDITS_PER_TRADE = 200; // deducted only when a trade closes in profit
+
+  const total = Number(plan?.totalCredits ?? 0);
+  const remaining = Number(plan?.remainingCredits ?? 0);
+  const consumed = Math.max(0, total - remaining);
+  const pct = total > 0 ? Math.min(100, Math.max(0, Math.round((remaining / total) * 100))) : 0;
+  const tradesLeft = Math.floor(remaining / CREDITS_PER_TRADE);
+
+  const outOfCredits = remaining < CREDITS_PER_TRADE;
+  const lowCredits = !outOfCredits && tradesLeft <= 3;
+  const botRunning = plan?.status === "APPROVED" && !outOfCredits;
+
+  const barColor =
+    pct > 80 ? "bg-emerald-500" : pct > 40 ? "bg-amber-500" : "bg-rose-500";
+  const pctColor =
+    pct > 80
+      ? "text-emerald-600 dark:text-emerald-400"
+      : pct > 40
+        ? "text-amber-600 dark:text-amber-400"
+        : "text-rose-600 dark:text-rose-400";
+
+  return (
+    <Card className="relative overflow-hidden border-violet-500/20 shadow-sm">
+
+      {plan ? (
+        <>
+          {/* Header */}
+          <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0 border-b border-border/50 px-5">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <CardTitle className="truncate text-base font-bold tracking-tight">{plan.name}</CardTitle>
+                </div>
+                <p className="truncate text-xs text-muted-foreground">
+                  Trading Subscription · {plan.accountSize} Allocation
+                </p>
+              </div>
+            </div>
+
+            <Link
+              href="/user-dashboard/plans"
+              className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-lg border border-border/60 bg-background/80 px-3 py-1.5 text-xs font-semibold text-foreground transition-colors hover:border-violet-500/40 hover:text-violet-600 dark:hover:text-violet-300"
+            >
+              Manage
+              <ArrowUpRight className="h-3.5 w-3.5" />
+            </Link>
           </CardHeader>
 
-          <CardContent>
-            {plan ? (
-              <div className="flex flex-col gap-4 rounded-xl border border-border/60 bg-muted/20 p-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="text-lg font-extrabold">{plan.name}</p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    Account size {plan.accountSize} · {plan.duration}
-                  </p>
-                </div>
+          {/* Body */}
+          <CardContent className="px-5">
+            <div className="grid grid-cols-1 gap-5">
+              {/* Credits */}
+              <div className="rounded-xl border border-border/60 bg-background/60 p-3.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    <Zap className="h-3.5 w-3.5 text-violet-500" />
+                    Available Credits
+                  </span>
 
-                <div className="flex flex-wrap items-center gap-6 text-sm">
-                  <div>
-                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                      Plan fee
-                    </p>
-                    <p className="mt-0.5 font-bold">{formatCurrency(plan.amount)}</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                      Expires
-                    </p>
-                    <p className="mt-0.5 font-bold">{formatDate(plan.expires)}</p>
-                  </div>
+                  {/* Bot state follows credits: no credits = bot stops trading */}
                   <span
-                    className={`rounded-full border px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-widest ${
-                      plan.status === "APPROVED"
+                    className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                      botRunning
                         ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                        : plan.status === "PENDING"
-                          ? "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400"
-                          : "border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400"
+                        : "border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400"
                     }`}
                   >
-                    {plan.status}
+                    <span className={`h-1.5 w-1.5 rounded-full ${botRunning ? "animate-pulse bg-emerald-500" : "bg-rose-500"}`} />
+                    {botRunning ? "Bot trading" : outOfCredits ? "Bot paused" : "Bot inactive"}
                   </span>
                 </div>
+
+                <div className="mt-1.5 flex items-baseline gap-1.5">
+                  <span className="text-2xl font-black tabular-nums tracking-tight">{remaining.toLocaleString()}</span>
+                  <span className="text-xs text-muted-foreground">/ {total.toLocaleString()} credits</span>
+                  <span className={`ml-auto text-xs font-bold ${pctColor}`}>{pct}% left</span>
+                </div>
+
+                <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-muted">
+                  <div className={`h-full rounded-full transition-all duration-300 ${barColor}`} style={{ width: `${pct}%` }} />
+                </div>
+
+                <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground">
+                  <span className="flex items-center gap-1">
+                    <Activity className="h-3 w-3 text-violet-500" />
+                    {CREDITS_PER_TRADE} credits per profitable trade
+                  </span>
+                  <span>{consumed.toLocaleString()} used</span>
+                </div>
+
+                {/* Contextual notice */}
+                {outOfCredits ? (
+                  <p className="mt-3 rounded-lg border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-[11px] font-medium text-rose-600 dark:text-rose-400">
+                    You're out of credits, so the bot has stopped trading for you. Top up to resume.
+                  </p>
+                ) : (
+                  <p
+                    className={`mt-3 rounded-lg border px-3 py-2 text-[11px] font-medium ${
+                      lowCredits
+                        ? "border-amber-500/20 bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                        : "border-border/50 bg-muted/30 text-muted-foreground"
+                    }`}
+                  >
+                    {lowCredits
+                      ? `Low credits: enough for ${tradesLeft} more profitable ${tradesLeft === 1 ? "trade" : "trades"}. The bot stops when they run out.`
+                      : `Enough for about ${tradesLeft.toLocaleString()} more profitable trades. Credits are only deducted when a trade is in profit.`}
+                  </p>
+                )}
               </div>
-            ) : (
-              <div className="py-10 text-center">
-                <p className="text-base font-semibold text-muted-foreground">
-                  No active plan yet.
-                </p>
-                <p className="mt-1 text-sm text-muted-foreground/80">
-                  Subscribe to a plan to start automated trading.
-                </p>
-              </div>
-            )}
+            </div>
           </CardContent>
-        </Card>
+        </>
+      ) : (
+        /* Empty state */
+        <CardContent className="flex flex-col items-start justify-between gap-4 p-5 sm:flex-row sm:items-center">
+          <div className="flex items-center gap-3.5">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-500/10 text-violet-600 ring-1 ring-violet-500/20 dark:text-violet-400">
+              <Bot className="h-5 w-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold">No Active Trading Subscription</h3>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Select a plan to get your credits. The bot trades for you until they run out.
+              </p>
+            </div>
+          </div>
+
+          <Link
+            href="/user-dashboard/plans"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-violet-600 px-3.5 py-2 text-xs font-bold text-white transition-colors hover:bg-violet-500"
+          >
+            Explore Plans
+            <ArrowUpRight className="h-3.5 w-3.5" />
+          </Link>
+        </CardContent>
+      )}
+    </Card>
+  );
+})()}
+
+
+
 
         {/* ───────── Trading calendar + News ───────── */}
         <section className="grid gap-6 lg:grid-cols-2">
           <Card className="border-violet-500/20 shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between space-y-0">
-              <CardTitle className="text-xl font-bold">Trading Calendar</CardTitle>
+              <CardTitle className="text-lg font-bold">Trading Calendar</CardTitle>
               <ViewAllButton href="/user-dashboard/calendar" />
             </CardHeader>
 
@@ -975,20 +742,21 @@ export default function DashboardPage() {
 
           <Card className="border-violet-500/20 shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between space-y-0">
-              <CardTitle className="text-xl font-bold">News</CardTitle>
+              <CardTitle className="text-lg font-bold">News</CardTitle>
               <ViewAllButton href="/user-dashboard/news" />
             </CardHeader>
 
-            <CardContent className="space-y-3">
+            <CardContent className="space-y-0">
               {data.news.map((item) => (
                 <NewsRow key={item.id} item={item} />
               ))}
+             <p className="line-clamp-2 pt-1 text-[10px] leading-relaxed text-muted-foreground/60">
+  News and headlines are aggregated from trusted sources and delivered through the NewsData.io API.
+  Coverage and availability may vary by source and region.
+</p>
             </CardContent>
           </Card>
         </section>
-
-        {/* ───────── Performance bar chart (Demo / Live) ───────── */}
-        <PerformanceBarChart series={data.performance} />
 
         {/* ───────── Recent activity (unchanged) ───────── */}
         <Card className="w-full border-border/50 shadow-sm">
@@ -1015,7 +783,7 @@ export default function DashboardPage() {
 
           <CardContent className="p-0">
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[680px] text-sm">
+              <table className="w-full min-w-[860px] text-sm">
                 <thead>
                   <tr className="border-y border-border/50 bg-muted/20 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
                     <th className="px-6 py-3 text-left">Symbol</th>
@@ -1023,7 +791,9 @@ export default function DashboardPage() {
                     <th className="px-6 py-3 text-center">Entry</th>
                     <th className="px-6 py-3 text-center">Lot size</th>
                     <th className="px-6 py-3 text-center">Result</th>
+                    <th className="px-6 py-3 text-center">Status</th>
                     <th className="px-6 py-3 text-right">Date</th>
+                    <th className="px-6 py-3 text-right">Closed Date</th>
                   </tr>
                 </thead>
 
@@ -1080,8 +850,26 @@ export default function DashboardPage() {
                         </div>
                       </td>
 
+                      <td className="px-6 py-4 text-center">
+                        <span
+                          className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                            trade.status === "WIN"
+                              ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                              : trade.status === "LOSS"
+                                ? "border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400"
+                                : "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                          }`}
+                        >
+                          {trade.status}
+                        </span>
+                      </td>
+
                       <td className="px-6 py-4 text-right text-xs text-muted-foreground">
                         {formatDate(trade.date)}
+                      </td>
+
+                      <td className="px-6 py-4 text-right text-xs text-muted-foreground">
+                        {trade.closedAt ? formatDate(trade.closedAt) : "—"}
                       </td>
                     </tr>
                   ))}

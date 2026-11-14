@@ -6,6 +6,7 @@ import {
   ArrowUpRight,
   Percent,
   Repeat,
+  Scale,
   TrendingDown,
   TrendingUp,
 } from "lucide-react";
@@ -188,14 +189,14 @@ export default function TradeHistoryPage() {
     const loss = closed.reduce((s, t) => s + Math.min(t.pl, 0), 0);
     const winRate = wins + losses > 0 ? Math.round((wins / (wins + losses)) * 100) : 0;
     const total = trades.filter((t) => t.status !== "FAILED").length;
-    return { total, profit, loss, winRate };
+    return { total, profit, loss, winRate, netPl: profit + loss };
   }, [trades]);
 
   const rows = trades.filter((t) =>
     filter === "all" ? true : filter === "winning" ? t.status === "WIN" : filter === "losing" ? t.status === "LOSS" : filter === "open" ? t.status === "OPEN" : t.status !== "OPEN");
 
   return (
-    <main className="min-h-screen text-foreground">
+    <main className="text-foreground">
       <div className="mx-auto max-w-7xl space-y-6 py-4">
         <div>
           <p
@@ -214,7 +215,7 @@ export default function TradeHistoryPage() {
           </p>
         </div>
 
-        <section className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <section className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
           <MiniStat
             icon={<Repeat className="h-4 w-4" />}
             label="Total Trades"
@@ -238,6 +239,16 @@ export default function TradeHistoryPage() {
             label="Win Rate"
             value={`${stats.winRate}%`}
             tone="bg-fuchsia-500/15 text-fuchsia-600 dark:text-fuchsia-400"
+          />
+          <MiniStat
+            icon={<Scale className="h-4 w-4" />}
+            label="Net P/L"
+            value={signed(stats.netPl)}
+            tone={
+              stats.netPl >= 0
+                ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+                : "bg-rose-500/15 text-rose-600 dark:text-rose-400"
+            }
           />
         </section>
 
