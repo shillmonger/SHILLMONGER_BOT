@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import jwt from 'jsonwebtoken';
 import TPMatrix from '@/models/TPMatrix';
 import User from '@/models/User';
+import { recordNotification } from '@/lib/notifications';
 
 export async function GET(request: NextRequest) {
   try {
@@ -131,6 +132,17 @@ export async function POST(request: NextRequest) {
       max_balance,
       tp_level,
       active: true,
+    });
+
+    void recordNotification({
+      actor: 'admin',
+      actorId: decoded.userId,
+      type: 'admin.tp_matrix_created',
+      category: 'admin',
+      title: 'TP matrix rule created',
+      message: `Admin created a TP matrix rule: balance ${min_balance}-${max_balance} → TP level ${tp_level}.`,
+      metadata: { ruleId: String(newRule._id), min_balance, max_balance, tp_level },
+      source: 'api/admin/tp-matrix',
     });
 
     return NextResponse.json(

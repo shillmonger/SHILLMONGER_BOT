@@ -3,6 +3,7 @@ import connectDB from '@/lib/db';
 import Broker from '@/models/Broker';
 import BotConfig from '@/models/BotConfig';
 import { requireAdmin } from '@/lib/auth-helper';
+import { recordNotification } from '@/lib/notifications';
 
 /**
  * PATCH /api/admin/brokers/[id]
@@ -42,6 +43,18 @@ export async function PATCH(
       return NextResponse.json({ error: 'Broker not found' }, { status: 404 });
     }
 
+    void recordNotification({
+      userId: broker.userId,
+      actor: 'admin',
+      actorId: guard._id,
+      type: body.status === 'disabled' ? 'admin.broker_disabled' : 'admin.broker_enabled',
+      category: 'admin',
+      title: `Broker ${body.status === 'disabled' ? 'disabled' : 'enabled'} by admin`,
+      message: `Admin ${guard.userName ?? guard.email} ${body.status === 'disabled' ? 'disabled' : 're-enabled'} broker ${broker.brokerName} for user ${String(broker.userId)}.`,
+      metadata: { brokerId: id, brokerName: broker.brokerName, status: body.status },
+      source: 'api/admin/brokers/[id]',
+    });
+
     return NextResponse.json({ success: true, status: broker.status });
   } catch (error) {
     console.error('Admin broker PATCH error:', error);
@@ -75,6 +88,22 @@ export async function DELETE(
       Broker.deleteOne({ _id: broker._id }),
       BotConfig.deleteOne({ userId: broker.userId }),
     ]);
+
+    void recordNotification({
+      userId: broker.userId,
+      actor: 'admin',
+      actorId: guard._id,
+      type: 'admin.broker_deleted',
+      category: 'admin',
+      title: 'Broker deleted by admin',
+      message: `Admin ${guard.userName ?? guard.email} deleted broker ${broker.brokerName} and bot config for user ${String(broker.userId)}.`,
+      metadata: {
+        brokerId: id,
+        brokerName: broker.brokerName,
+        deleted: { broker: brokerRes.deletedCount > 0, botConfig: botRes.deletedCount > 0 },
+      },
+      source: 'api/admin/brokers/[id]',
+    });
 
     return NextResponse.json({
       success: true,

@@ -4,6 +4,7 @@ import { verifyToken } from '@/lib/auth';
 import User from '@/models/User';
 import connectDB from '@/lib/db';
 import { normalizePfpPath } from '@/lib/pfp';
+import { recordNotification } from '@/lib/notifications';
 
 export async function PATCH(request: NextRequest) {
   try {
@@ -88,6 +89,17 @@ export async function PATCH(request: NextRequest) {
         { status: 404 }
       );
     }
+
+    void recordNotification({
+      userId: decoded.userId,
+      actor: 'user',
+      type: 'account.profile_updated',
+      category: 'account',
+      title: 'Profile updated',
+      message: `${updatedUser.userName} updated their profile (username, phone, country).`,
+      metadata: { username: updatedUser.userName, email: updatedUser.email, fields: Object.keys(updateData) },
+      source: 'api/user/update-profile',
+    });
 
     return NextResponse.json({
       success: true,

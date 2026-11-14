@@ -57,8 +57,8 @@ export default function UserHeader({
             avatar: userData.avatar || "",
           });
 
-          // Fetch notification count
-          await fetchNotificationCount(userData._id);
+          // Fetch unseen notification count
+          await fetchNotificationCount();
         } else {
           console.error("Failed to fetch user data:", data.error);
         }
@@ -70,11 +70,13 @@ export default function UserHeader({
       }
     };
 
-    const fetchNotificationCount = async (userId: string) => {
+    const fetchNotificationCount = async () => {
       try {
-        // TODO: Implement notification count when API endpoints are available
-        // Currently commented out due to missing API routes
-        setNotificationCount(0);
+        const res = await fetch("/api/admin/notifications?unseen=1&limit=1", { cache: "no-store" });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok) {
+          setNotificationCount(typeof data.total === "number" ? data.total : 0);
+        }
       } catch (error) {
         console.error("Error fetching notification count:", error);
         setNotificationCount(0);
@@ -82,6 +84,10 @@ export default function UserHeader({
     };
 
     fetchData();
+
+    // Poll for new unseen notifications every 30s
+    const interval = setInterval(fetchNotificationCount, 30000);
+    return () => clearInterval(interval);
   }, []);
 
   // Default profile image constant
@@ -124,13 +130,14 @@ export default function UserHeader({
 
         {/* Notification Bell */}
         <Link
-          href="/UserDashboard/notifications"
-          className="p-2 rounded-full relative cursor-pointer"
+          href="/AdminDashboard/notifications"
+          aria-label="Notifications"
+          className="p-2 rounded-xl relative cursor-pointer bg-secondary hover:bg-violet-500/15 transition-colors"
         >
           <Bell className="h-5 w-5" />
 
           {!notificationLoading && notificationCount > 0 && (
-            <span className="absolute top-0 right-0 bg-red-500 text-white text-[9px] font-black rounded-full min-w-[16px] h-4 px-1 flex items-center justify-center border-2 border-background leading-none">
+            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-black rounded-full min-w-[16px] h-4 px-1 flex items-center justify-center border-2 border-background leading-none">
               {notificationCount > 9 ? "9+" : notificationCount}
             </span>
           )}

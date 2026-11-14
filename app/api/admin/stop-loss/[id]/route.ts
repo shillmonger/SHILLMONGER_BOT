@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import jwt from 'jsonwebtoken';
 import StopLossManagement from '@/models/StopLossManagement';
 import User from '@/models/User';
+import { recordNotification } from '@/lib/notifications';
 
 export async function PUT(
   request: NextRequest,
@@ -89,6 +90,17 @@ export async function PUT(
       );
     }
 
+    void recordNotification({
+      actor: 'admin',
+      actorId: decoded.userId,
+      type: 'admin.stop_loss_updated',
+      category: 'admin',
+      title: 'Stop loss rule updated',
+      message: `Admin updated stop loss rule ${id}: balance ${min_balance}-${max_balance} → stop loss ${stop_loss}.`,
+      metadata: { ruleId: id, min_balance, max_balance, stop_loss },
+      source: 'api/admin/stop-loss/[id]',
+    });
+
     return NextResponse.json(
       { message: 'Stop loss rule updated successfully', rule: updatedRule },
       { status: 200 }
@@ -149,6 +161,17 @@ export async function DELETE(
         { status: 404 }
       );
     }
+
+    void recordNotification({
+      actor: 'admin',
+      actorId: decoded.userId,
+      type: 'admin.stop_loss_deleted',
+      category: 'admin',
+      title: 'Stop loss rule deleted',
+      message: `Admin deleted stop loss rule ${id} (balance ${deletedRule.min_balance}-${deletedRule.max_balance}, stop loss ${deletedRule.stop_loss}).`,
+      metadata: { ruleId: id, rule: deletedRule.toObject ? deletedRule.toObject() : deletedRule },
+      source: 'api/admin/stop-loss/[id]',
+    });
 
     return NextResponse.json(
       { message: 'Stop loss rule deleted successfully' },

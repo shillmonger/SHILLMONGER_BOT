@@ -27,6 +27,7 @@
 import connectDB from '@/lib/db';
 import TradeExecution from '@/models/TradeExecution';
 import SignalEvaluation from '@/models/SignalEvaluation';
+import { recordNotification } from '@/lib/notifications';
 import {
   getOrders,
   getPositions,
@@ -411,6 +412,19 @@ async function reconcileSubmitted(
     if (resting) summary.unchanged += 1;
     else summary.opened += 1;
     await syncEvaluation(exec, resting ? 'trade_pending' : 'trade_open');
+    if (resting) {
+      await notifyTrade(
+        exec, 'trade.order_placed', 'Pending order confirmed',
+        `Pending order confirmed resting: ${exec.direction} ${exec.epic}.`,
+        { dealId: dealId ?? null }
+      );
+    } else {
+      await notifyTrade(
+        exec, 'trade.opened', 'Trade opened',
+        `Trade opened: ${exec.direction} ${exec.epic} x${exec.size ?? '?'} (${env.toUpperCase()}).`,
+        { dealId: dealId ?? null }
+      );
+    }
     return;
   }
   if (status === 'REJECTED' || status === 'FAILED') {
@@ -458,6 +472,11 @@ async function reconcilePending(
     });
     summary.opened += 1;
     await syncEvaluation(exec, 'trade_open');
+    await notifyTrade(
+      exec, 'trade.opened', 'Trade opened',
+      `Trade opened: ${exec.direction} ${exec.epic} x${exec.size ?? '?'} (${exec.environment.toUpperCase()}).`,
+      { dealId: positionDealId(fill) ?? exec.dealId ?? null }
+    );
     return;
   }
 
@@ -467,6 +486,11 @@ async function reconcilePending(
   });
   summary.cancelled += 1;
   await syncEvaluation(exec, 'trade_cancelled');
+  await notifyTrade(
+    exec, 'trade.cancelled', 'Pending order cancelled',
+    `Pending order cancelled (no fill): ${exec.direction} ${exec.epic}.`,
+    { error: 'working_order_removed' }
+  );
 }
 
 /* ------------------------------------------------------------------ */
@@ -565,6 +589,20 @@ async function reconcileOpen(
   });
   summary.closed += 1;
   await syncEvaluation(exec, 'trade_closed');
+  // Only notify on the open -> closed transition. 'closed' execs re-enter
+  // here during the P/L backfill window and must not re-notify.
+  if (exec.status === 'open') {
+    await notifyTrade(
+      exec, 'trade.closed', 'Trade closed',
+      `Trade closed: ${exec.direction} ${exec.epic} — P/L ${pnl != null ? `${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}` : 'unknown'}.`,
+      {
+        dealId: exec.dealId ?? null,
+        realizedPnl: typeof pnl === 'number' ? pnl : null,
+        exitLevel,
+        closedAt: closedAt.toISOString(),
+      }
+    );
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -596,10 +634,44 @@ async function markState(
   await TradeExecution.updateOne({ _id: exec._id }, { $set });
 }
 
+/** Append a trade-lifecycle event to the NOTIFICATIONS feed. */
+async function notifyTrade(
+  exec: ExecDoc,
+  type: string,
+  title: string,
+  message: string,
+  metadata?: Record<string, unknown>
+) {
+  const symbol = (exec as { symbol?: string }).symbol ?? exec.epic;
+  await recordNotification({
+    userId: String(exec.userId),
+    actor: 'system',
+    type,
+    category: 'trading',
+    title,
+    message,
+    metadata: {
+      executionId: String(exec._id),
+      epic: exec.epic,
+      symbol,
+      direction: exec.direction,
+      size: exec.size ?? null,
+      environment: exec.environment,
+      ...metadata,
+    },
+    source: 'lib/trade-monitor',
+  });
+}
+
 async function markFailed(exec: ExecDoc, reason: string, summary: MonitorSummary) {
   await markState(exec, 'failed', { error: reason });
   summary.failed += 1;
   await syncEvaluation(exec, 'trade_failed');
+  await notifyTrade(
+    exec, 'trade.failed', 'Trade failed',
+    `Trade failed: ${exec.direction} ${exec.epic} — ${reason}.`,
+    { error: reason }
+  );
 }
 
 /** Mirror the lifecycle onto the linked SIGNAL_EVALUATIONS doc. */

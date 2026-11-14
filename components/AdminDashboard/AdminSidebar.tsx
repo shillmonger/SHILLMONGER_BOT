@@ -36,6 +36,7 @@ import {
   ListChecks,
   Microscope,
   ChartNoAxesCombined,
+  Bell,
   X,
 } from "lucide-react";
 
@@ -106,10 +107,10 @@ export default function AdminSidebar({
       name: "Bot Settings",
       icon: Settings,
       children: [
-        { name: "Lot size", icon: Scale, href: `${basePath}/BotSettings/lot-size` },
-        { name: "Stop lose", icon: TriangleAlert, href: `${basePath}/BotSettings/stop-loss` },
-        { name: "TP Matrix", icon: Bookmark, href: `${basePath}/BotSettings/tp-matrix` },
+        { name: "Lot size Settings", icon: Scale, href: `${basePath}/BotSettings/lot-size` },
+        { name: "Stop lose Config", icon: TriangleAlert, href: `${basePath}/BotSettings/stop-loss` },
         { name: "Position Limits", icon: CircleGauge, href: `${basePath}/BotSettings/position-limits` },
+        { name: "TP Matrix config", icon: Bookmark, href: `${basePath}/BotSettings/tp-matrix` },
       ],
     },
     { name: "Total Analytics", icon: PieChart, href: `${basePath}/analytics` },
@@ -122,15 +123,16 @@ export default function AdminSidebar({
     { name: "Executions", icon: ChartSpline, href: `${basePath}/TradingActivity/trade-executions` },
   ],
 },
-    {
-      name: "Audit logs",
-      icon: KeyRound,
-      children: [
-        { name: "Processed Logs", icon: MailSearch, href: `${basePath}/AuditLogs/processed-logs` },
-      ],
-    },
-    { name: "Group Rankings", icon: Trophy, href: `${basePath}/group-rankings` },
-    { name: "User Management", icon: UsersRound, href: `${basePath}/user-management` },
+{ name: "Group Rankings", icon: Trophy, href: `${basePath}/group-rankings` },
+{ name: "User Management", icon: UsersRound, href: `${basePath}/user-management` },
+{
+  name: "Audit logs",
+  icon: KeyRound,
+  children: [
+    { name: "Processed Logs", icon: MailSearch, href: `${basePath}/AuditLogs/processed-logs` },
+    { name: "Notifications Log", icon: Bell, href: `${basePath}/AuditLogs/notifications` },
+  ],
+},
     { name: "Switch to Trader", icon: Lock, href: `/UserDashboard/dashboard` },
   ];
 
@@ -169,7 +171,7 @@ export default function AdminSidebar({
   );
 
   const renderNav = (onNavigate?: () => void) => (
-    <nav className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-1 scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent">
+    <nav className="scrollbar-hide flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-1">
       <p
         className={`${plexMono.className} px-2 pb-2 text-[9px] tracking-[0.2em] text-muted-foreground/70 uppercase`}
       >

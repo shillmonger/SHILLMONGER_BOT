@@ -6,6 +6,7 @@ import Broker from '@/models/Broker';
 import BotConfig from '@/models/BotConfig';
 import TradeExecution from '@/models/TradeExecution';
 import { requireAdmin } from '@/lib/auth-helper';
+import { recordNotification } from '@/lib/notifications';
 
 /**
  * PATCH /api/admin/users/[id]
@@ -73,6 +74,18 @@ export async function PATCH(
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
+    void recordNotification({
+      userId: id,
+      actor: 'admin',
+      actorId: guard._id,
+      type: 'admin.user_updated',
+      category: 'admin',
+      title: 'User updated by admin',
+      message: `Admin ${guard.userName ?? guard.email} updated ${user.userName} (${user.email}): ${Object.entries(update).map(([k, v]) => `${k}=${v}`).join(', ')}.`,
+      metadata: { targetUserId: id, targetUserName: user.userName, targetEmail: user.email, changes: update },
+      source: 'api/admin/users/[id]',
+    });
+
     return NextResponse.json({
       success: true,
       user: {
@@ -111,7 +124,7 @@ export async function DELETE(
     }
 
     await connectDB();
-    const user = await User.findById(id).select('userName').lean();
+    const user = await User.findById(id).select('userName email').lean();
     if (!user) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
@@ -123,6 +136,23 @@ export async function DELETE(
       BotConfig.deleteMany({ userId }),
       TradeExecution.deleteMany({ userId }),
     ]);
+
+    void recordNotification({
+      userId: id,
+      actor: 'admin',
+      actorId: guard._id,
+      type: 'admin.user_deleted',
+      category: 'admin',
+      title: 'User deleted by admin',
+      message: `Admin ${guard.userName ?? guard.email} permanently deleted user ${user.userName} (${user.email}) and all related data.`,
+      metadata: {
+        targetUserId: id,
+        targetUserName: user.userName,
+        targetEmail: user.email,
+        deleted: { user: userRes.deletedCount > 0, brokers: brokerRes.deletedCount, botConfigs: botRes.deletedCount, executions: execRes.deletedCount },
+      },
+      source: 'api/admin/users/[id]',
+    });
 
     return NextResponse.json({
       success: true,

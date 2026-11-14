@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import jwt from 'jsonwebtoken';
 import StopLossManagement from '@/models/StopLossManagement';
 import User from '@/models/User';
+import { recordNotification } from '@/lib/notifications';
 
 export async function GET(request: NextRequest) {
   try {
@@ -124,6 +125,17 @@ export async function POST(request: NextRequest) {
       max_balance,
       stop_loss,
       active: true,
+    });
+
+    void recordNotification({
+      actor: 'admin',
+      actorId: decoded.userId,
+      type: 'admin.stop_loss_created',
+      category: 'admin',
+      title: 'Stop loss rule created',
+      message: `Admin created a stop loss rule: balance ${min_balance}-${max_balance} → stop loss ${stop_loss}.`,
+      metadata: { ruleId: String(newRule._id), min_balance, max_balance, stop_loss },
+      source: 'api/admin/stop-loss',
     });
 
     return NextResponse.json(

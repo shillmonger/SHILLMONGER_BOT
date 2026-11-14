@@ -24,6 +24,7 @@ import {
   PieChart,
   Layers,
   X,
+  Bell,
 } from "lucide-react";
 
 const plexMono = IBM_Plex_Mono({
@@ -133,6 +134,7 @@ export default function UserSidebar({
     },
 
     { name: "Total Analytics", icon: PieChart, href: `${basePath}/analytics` },
+    { name: "Notifications", icon: Bell, href: `${basePath}/notifications` },
     {
       name: "Profile Settings",
       icon: Settings,
@@ -184,7 +186,7 @@ export default function UserSidebar({
   );
 
   const renderNav = (onNavigate?: () => void) => (
-    <nav className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-1 scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent">
+    <nav className="scrollbar-hide flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-1">
       <p
         className={`${plexMono.className} px-2 pb-2 text-[9px] tracking-[0.2em] text-muted-foreground/70 uppercase`}
       >

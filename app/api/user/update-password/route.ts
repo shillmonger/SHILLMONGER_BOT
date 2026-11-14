@@ -4,6 +4,7 @@ import { verifyToken } from '@/lib/auth';
 import { comparePassword, hashPassword } from '@/lib/auth';
 import User from '@/models/User';
 import connectDB from '@/lib/db';
+import { recordNotification } from '@/lib/notifications';
 
 export async function PATCH(request: NextRequest) {
   try {
@@ -68,6 +69,17 @@ export async function PATCH(request: NextRequest) {
     // Update password
     freshUser.passwordHash = newPasswordHash;
     await freshUser.save();
+
+    void recordNotification({
+      userId: freshUser._id,
+      actor: 'user',
+      type: 'account.password_changed',
+      category: 'account',
+      title: 'Password changed',
+      message: `${freshUser.userName} changed their account password.`,
+      metadata: { username: freshUser.userName, email: freshUser.email },
+      source: 'api/user/update-password',
+    });
 
     return NextResponse.json({
       success: true,

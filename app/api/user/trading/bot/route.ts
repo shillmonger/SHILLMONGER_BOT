@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
 import BotConfig from '@/models/BotConfig';
 import { getCurrentUser } from '@/lib/auth-helper';
+import { recordNotification } from '@/lib/notifications';
 
 const VALID_STATES = ['stopped', 'running', 'paused'] as const;
 
@@ -141,6 +142,7 @@ export async function PUT(request: NextRequest) {
     }
 
     await connectDB();
+    const prevBot = await BotConfig.findOne({ userId }).lean();
     const bot = await BotConfig.findOneAndUpdate(
       { userId },
       {
@@ -151,6 +153,52 @@ export async function PUT(request: NextRequest) {
       },
       { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true }
     ).lean();
+
+    /* ---- Activity notifications for meaningful bot changes ---- */
+    const prev = (prevBot ?? {}) as Record<string, unknown>;
+    const actionFields: Array<{ key: string; label: string; type: (v: unknown) => string }> = [
+      { key: 'state', label: 'Bot state', type: (v) => `bot.${String(v)}` },
+      { key: 'environment', label: 'Trading environment', type: (v) => `bot.environment_${String(v)}` },
+      { key: 'automationEnabled', label: 'Automation', type: (v) => `bot.automation_${v ? 'enabled' : 'disabled'}` },
+      { key: 'emergencyStop', label: 'Emergency stop', type: (v) => `bot.emergency_stop_${v ? 'activated' : 'cleared'}` },
+    ];
+    const settingChanges: Record<string, { from: unknown; to: unknown }> = {};
+
+    for (const [key, value] of Object.entries(update)) {
+      const field = actionFields.find((f) => f.key === key);
+      const from = prev[key];
+      const changed =
+        !(key in prev) ||
+        JSON.stringify(from ?? null) !== JSON.stringify(value ?? null);
+      if (!changed) continue;
+      if (field) {
+        void recordNotification({
+          userId,
+          actor: 'user',
+          type: field.type(value),
+          category: 'trading',
+          title: `${field.label} → ${String(value).toUpperCase()}`,
+          message: `${user.userName} set ${field.label.toLowerCase()} to ${String(value).toUpperCase()}${from !== undefined ? ` (was ${String(from).toUpperCase()})` : ''}.`,
+          metadata: { field: key, from: from ?? null, to: value },
+          source: 'api/user/trading/bot',
+        });
+      } else {
+        settingChanges[key] = { from: from ?? null, to: value };
+      }
+    }
+
+    if (Object.keys(settingChanges).length > 0) {
+      void recordNotification({
+        userId,
+        actor: 'user',
+        type: 'bot.settings_updated',
+        category: 'trading',
+        title: 'Bot settings updated',
+        message: `${user.userName} updated bot settings: ${Object.keys(settingChanges).join(', ')}.`,
+        metadata: { changes: settingChanges },
+        source: 'api/user/trading/bot',
+      });
+    }
 
     return NextResponse.json({
       success: true,

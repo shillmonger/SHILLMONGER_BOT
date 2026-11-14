@@ -3,6 +3,7 @@ import connectDB from '@/lib/db';
 import User from '@/models/User';
 import { sendEmail, getWelcomeEmail } from '@/lib/email';
 import { getAppUrl } from '@/lib/config';
+import { recordNotification } from '@/lib/notifications';
 
 export async function GET(request: NextRequest) {
   try {
@@ -53,6 +54,17 @@ export async function GET(request: NextRequest) {
       'Your Account Has Been Verified — Welcome to SHILLMONGER',
       getWelcomeEmail(user.userName, dashboardUrl)
     );
+
+    void recordNotification({
+      userId: user._id,
+      actor: 'user',
+      type: 'user.email_verified',
+      category: 'auth',
+      title: 'Email verified',
+      message: `${user.userName} (${user.email}) verified their email address.`,
+      metadata: { username: user.userName, email: user.email },
+      source: 'api/auth/confirm',
+    });
 
     return NextResponse.json(
       { message: 'Email verified successfully' },

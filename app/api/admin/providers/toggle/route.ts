@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
 import TelegramProvider from '@/models/TelegramProvider';
 import { getCurrentUser } from '@/lib/auth-helper';
+import { recordNotification } from '@/lib/notifications';
 
 export async function POST(request: Request) {
   try {
@@ -32,6 +33,17 @@ export async function POST(request: Request) {
 
     provider.isActive = !provider.isActive;
     await provider.save();
+
+    void recordNotification({
+      actor: 'admin',
+      actorId: user._id,
+      type: provider.isActive ? 'admin.provider_enabled' : 'admin.provider_disabled',
+      category: 'admin',
+      title: `Signal provider ${provider.isActive ? 'enabled' : 'disabled'}`,
+      message: `Admin ${user.userName ?? user.email} ${provider.isActive ? 'enabled' : 'disabled'} Telegram provider "${provider.groupName}" (${normalizedGroupId}).`,
+      metadata: { groupId: normalizedGroupId, groupName: provider.groupName, isActive: provider.isActive },
+      source: 'api/admin/providers/toggle',
+    });
 
     return NextResponse.json({
       success: true,

@@ -9,6 +9,7 @@ import {
   CapitalApiError,
 } from '@/lib/capitalcom';
 import type { IBrokerAccountInfo } from '@/models/Broker';
+import { recordNotification } from '@/lib/notifications';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -84,6 +85,16 @@ export async function POST(request: NextRequest) {
         { _id: broker!._id },
         { $set: { connectionStatus: 'error', connectionError: msg } }
       );
+      void recordNotification({
+        userId,
+        actor: 'user',
+        type: 'broker.connect_failed',
+        category: 'broker',
+        title: 'Broker connection failed',
+        message: `${user.userName} failed to connect Capital.com (${env}): ${msg}`,
+        metadata: { environment: env, email, error: msg },
+        source: 'api/user/capital/connect',
+      });
       return NextResponse.json(
         { error: msg, connected: false },
         { status: 401 }
@@ -126,6 +137,17 @@ export async function POST(request: NextRequest) {
       },
       { returnDocument: 'after' }
     );
+
+    void recordNotification({
+      userId,
+      actor: 'user',
+      type: 'broker.connected',
+      category: 'broker',
+      title: 'Broker connected',
+      message: `${user.userName} connected their Capital.com account (${env.toUpperCase()}).`,
+      metadata: { broker: 'capital.com', environment: env, email },
+      source: 'api/user/capital/connect',
+    });
 
     return NextResponse.json({
       success: true,

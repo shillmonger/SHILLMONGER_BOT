@@ -3,6 +3,7 @@ import connectDB from '@/lib/db';
 import User from '@/models/User';
 import { hashPassword } from '@/lib/auth';
 import { getAppUrl } from '@/lib/config';
+import { recordNotification } from '@/lib/notifications';
 
 export async function POST(request: NextRequest) {
   try {
@@ -62,6 +63,17 @@ export async function POST(request: NextRequest) {
     user.resetToken = undefined;
     user.resetTokenExpiry = undefined;
     await user.save();
+
+    void recordNotification({
+      userId: user._id,
+      actor: 'user',
+      type: 'user.password_reset',
+      category: 'auth',
+      title: 'Password reset completed',
+      message: `${user.userName} (${user.email}) reset their password via email link.`,
+      metadata: { username: user.userName, email: user.email },
+      source: 'api/auth/reset-password',
+    });
 
     return NextResponse.json(
       { message: 'Password reset successfully. You can now login with your new password' },

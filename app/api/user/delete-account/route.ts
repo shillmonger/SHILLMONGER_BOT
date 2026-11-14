@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 import { verifyToken } from '@/lib/auth';
 import User from '@/models/User';
 import connectDB from '@/lib/db';
+import { recordNotification } from '@/lib/notifications';
 
 export async function DELETE(request: NextRequest) {
   try {
@@ -57,6 +58,17 @@ export async function DELETE(request: NextRequest) {
 
     // Delete the user account
     await User.findByIdAndDelete(decoded.userId);
+
+    void recordNotification({
+      userId: decoded.userId,
+      actor: 'user',
+      type: 'account.deleted',
+      category: 'account',
+      title: 'Account deleted',
+      message: `${user.userName} (${user.email}) deleted their account.`,
+      metadata: { username: user.userName, email: user.email, role: user.role },
+      source: 'api/user/delete-account',
+    });
 
     // Clear auth cookie
     const response = NextResponse.json({

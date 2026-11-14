@@ -4,6 +4,7 @@ import User from '@/models/User';
 import { generateResetToken } from '@/lib/auth';
 import { sendEmail, getForgotPasswordEmail } from '@/lib/email';
 import { getAppUrl } from '@/lib/config';
+import { recordNotification } from '@/lib/notifications';
 
 export async function POST(request: NextRequest) {
   try {
@@ -61,6 +62,17 @@ export async function POST(request: NextRequest) {
     if (!emailSent) {
       console.error('Failed to send reset email to:', email);
     }
+
+    void recordNotification({
+      userId: user._id,
+      actor: 'user',
+      type: 'user.password_reset_requested',
+      category: 'auth',
+      title: 'Password reset requested',
+      message: `${user.userName} (${user.email}) requested a password reset link.`,
+      metadata: { username: user.userName, email: user.email },
+      source: 'api/auth/forgot-password',
+    });
 
     return NextResponse.json(
       { message: 'If an account exists with this email, a password reset link has been sent' },

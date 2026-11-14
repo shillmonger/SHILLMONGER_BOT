@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/auth-helper';
 import { botFetch } from '@/lib/bot';
+import { recordNotification } from '@/lib/notifications';
 
 /**
  * POST /api/admin/telegram/connect
@@ -21,6 +22,17 @@ export async function POST() {
       method: 'POST',
       key: 'admin',
     });
+    if (result.ok) {
+      void recordNotification({
+        actor: 'admin',
+        actorId: user._id,
+        type: 'admin.telegram_connected',
+        category: 'admin',
+        title: 'Telegram listener connected',
+        message: `Admin ${user.userName ?? user.email} started the Telegram signal listener.`,
+        source: 'api/admin/telegram/connect',
+      });
+    }
     return NextResponse.json(result.data, { status: result.ok ? 200 : result.status });
   } catch (error) {
     console.error('Telegram connect proxy error:', error);

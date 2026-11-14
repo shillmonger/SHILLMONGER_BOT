@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import jwt from 'jsonwebtoken';
 import PositionLimit from '@/models/PositionLimit';
 import User from '@/models/User';
+import { recordNotification } from '@/lib/notifications';
 
 export async function PUT(
   request: NextRequest,
@@ -96,6 +97,17 @@ export async function PUT(
       );
     }
 
+    void recordNotification({
+      actor: 'admin',
+      actorId: decoded.userId,
+      type: 'admin.position_limit_updated',
+      category: 'admin',
+      title: 'Position limit rule updated',
+      message: `Admin updated position limit rule ${id}: balance ${min_balance}-${max_balance} → max ${max_positions} positions.`,
+      metadata: { ruleId: id, min_balance, max_balance, max_positions },
+      source: 'api/admin/position-limits/[id]',
+    });
+
     return NextResponse.json(
       { message: 'Position limit rule updated successfully', rule: updatedRule },
       { status: 200 }
@@ -156,6 +168,17 @@ export async function DELETE(
         { status: 404 }
       );
     }
+
+    void recordNotification({
+      actor: 'admin',
+      actorId: decoded.userId,
+      type: 'admin.position_limit_deleted',
+      category: 'admin',
+      title: 'Position limit rule deleted',
+      message: `Admin deleted position limit rule ${id} (balance ${deletedRule.min_balance}-${deletedRule.max_balance}, max ${deletedRule.max_positions} positions).`,
+      metadata: { ruleId: id, rule: deletedRule.toObject ? deletedRule.toObject() : deletedRule },
+      source: 'api/admin/position-limits/[id]',
+    });
 
     return NextResponse.json(
       { message: 'Position limit rule deleted successfully' },

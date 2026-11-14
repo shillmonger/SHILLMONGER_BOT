@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import jwt from 'jsonwebtoken';
 import TPMatrix from '@/models/TPMatrix';
 import User from '@/models/User';
+import { recordNotification } from '@/lib/notifications';
 
 export async function PUT(
   request: NextRequest,
@@ -96,6 +97,17 @@ export async function PUT(
       );
     }
 
+    void recordNotification({
+      actor: 'admin',
+      actorId: decoded.userId,
+      type: 'admin.tp_matrix_updated',
+      category: 'admin',
+      title: 'TP matrix rule updated',
+      message: `Admin updated TP matrix rule ${id}: balance ${min_balance}-${max_balance} → TP level ${tp_level}.`,
+      metadata: { ruleId: id, min_balance, max_balance, tp_level },
+      source: 'api/admin/tp-matrix/[id]',
+    });
+
     return NextResponse.json(
       { message: 'TP matrix rule updated successfully', rule: updatedRule },
       { status: 200 }
@@ -156,6 +168,17 @@ export async function DELETE(
         { status: 404 }
       );
     }
+
+    void recordNotification({
+      actor: 'admin',
+      actorId: decoded.userId,
+      type: 'admin.tp_matrix_deleted',
+      category: 'admin',
+      title: 'TP matrix rule deleted',
+      message: `Admin deleted TP matrix rule ${id} (balance ${deletedRule.min_balance}-${deletedRule.max_balance}, TP level ${deletedRule.tp_level}).`,
+      metadata: { ruleId: id, rule: deletedRule.toObject ? deletedRule.toObject() : deletedRule },
+      source: 'api/admin/tp-matrix/[id]',
+    });
 
     return NextResponse.json(
       { message: 'TP matrix rule deleted successfully' },

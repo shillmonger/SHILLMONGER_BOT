@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import jwt from 'jsonwebtoken';
 import LotSizeManagement from '@/models/LotSizeManagement';
 import User from '@/models/User';
+import { recordNotification } from '@/lib/notifications';
 
 export async function PUT(
   request: NextRequest,
@@ -89,6 +90,17 @@ export async function PUT(
       );
     }
 
+    void recordNotification({
+      actor: 'admin',
+      actorId: decoded.userId,
+      type: 'admin.lot_size_updated',
+      category: 'admin',
+      title: 'Lot size rule updated',
+      message: `Admin updated lot size rule ${id}: balance ${min_balance}-${max_balance} → lot size ${lot_size}.`,
+      metadata: { ruleId: id, min_balance, max_balance, lot_size },
+      source: 'api/admin/lot-size/[id]',
+    });
+
     return NextResponse.json(
       { message: 'Lot size rule updated successfully', rule: updatedRule },
       { status: 200 }
@@ -149,6 +161,17 @@ export async function DELETE(
         { status: 404 }
       );
     }
+
+    void recordNotification({
+      actor: 'admin',
+      actorId: decoded.userId,
+      type: 'admin.lot_size_deleted',
+      category: 'admin',
+      title: 'Lot size rule deleted',
+      message: `Admin deleted lot size rule ${id} (balance ${deletedRule.min_balance}-${deletedRule.max_balance}, lot size ${deletedRule.lot_size}).`,
+      metadata: { ruleId: id, rule: deletedRule.toObject ? deletedRule.toObject() : deletedRule },
+      source: 'api/admin/lot-size/[id]',
+    });
 
     return NextResponse.json(
       { message: 'Lot size rule deleted successfully' },

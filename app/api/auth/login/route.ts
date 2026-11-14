@@ -3,6 +3,7 @@ import connectDB from '@/lib/db';
 import User from '@/models/User';
 import { comparePassword, generateToken } from '@/lib/auth';
 import { normalizePfpPath } from '@/lib/pfp';
+import { recordNotification } from '@/lib/notifications';
 
 export async function POST(request: NextRequest) {
   try {
@@ -56,6 +57,17 @@ export async function POST(request: NextRequest) {
     // Update last login
     user.lastLoginAt = new Date();
     await user.save();
+
+    void recordNotification({
+      userId: user._id,
+      actor: 'user',
+      type: 'user.login',
+      category: 'auth',
+      title: 'User logged in',
+      message: `${user.userName} (${user.email}) signed in.`,
+      metadata: { username: user.userName, email: user.email, role: user.role },
+      source: 'api/auth/login',
+    });
 
     // Generate JWT token
     const token = generateToken(user._id.toString(), user.email);

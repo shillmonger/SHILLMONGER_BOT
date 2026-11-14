@@ -33,6 +33,7 @@ import LotSizeManagement from '@/models/LotSizeManagement';
 import StopLossManagement from '@/models/StopLossManagement';
 import TPMatrix from '@/models/TPMatrix';
 import SignalEvaluation from '@/models/SignalEvaluation';
+import { recordNotification } from '@/lib/notifications';
 import {
   getBroker,
   getSession,
@@ -754,7 +755,39 @@ async function recordExecution(
       },
       { upsert: true, returnDocument: 'after' }
     );
-    return doc?._id ? String(doc._id) : undefined;
+    const execId = doc?._id ? String(doc._id) : undefined;
+
+    /* Activity feed: notify on executions that reached a meaningful
+     * state. 'submitted' is skipped — the monitor records the open. */
+    const symbol = signal.symbol ?? args.epic;
+    const base = `${args.direction} ${symbol} x${args.size} (${args.env.toUpperCase()})`;
+    if (args.status === 'open') {
+      void recordNotification({
+        userId, actor: 'system', type: 'trade.opened', category: 'trading',
+        title: 'Trade opened',
+        message: `Trade opened: ${base} @ ${signal.entry}.`,
+        metadata: { executionId: execId, epic: args.epic, direction: args.direction, size: args.size, entry: signal.entry, environment: args.env, orderType: args.orderType ?? signal.order_type ?? null, groupName: signal.group_name ?? null },
+        source: 'lib/trading-engine',
+      });
+    } else if (args.status === 'pending') {
+      void recordNotification({
+        userId, actor: 'system', type: 'trade.order_placed', category: 'trading',
+        title: 'Pending order placed',
+        message: `Pending ${args.orderType ?? signal.order_type ?? 'order'} placed: ${base} @ ${signal.entry}.`,
+        metadata: { executionId: execId, epic: args.epic, direction: args.direction, size: args.size, entry: signal.entry, environment: args.env, orderType: args.orderType ?? signal.order_type ?? null, groupName: signal.group_name ?? null },
+        source: 'lib/trading-engine',
+      });
+    } else if (args.status === 'failed' || args.status === 'rejected') {
+      void recordNotification({
+        userId, actor: 'system', type: `trade.${args.status}`, category: 'trading',
+        title: args.status === 'failed' ? 'Trade failed' : 'Trade rejected',
+        message: `Trade ${args.status}: ${base} — ${args.error ?? 'unknown error'}.`,
+        metadata: { executionId: execId, epic: args.epic, direction: args.direction, size: args.size, environment: args.env, orderType: args.orderType ?? signal.order_type ?? null, error: args.error ?? null, groupName: signal.group_name ?? null },
+        source: 'lib/trading-engine',
+      });
+    }
+
+    return execId;
   } catch (e) {
     console.error('[trading-engine] failed to record execution:', e);
     return undefined;

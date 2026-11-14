@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import jwt from 'jsonwebtoken';
 import LotSizeManagement from '@/models/LotSizeManagement';
 import User from '@/models/User';
+import { recordNotification } from '@/lib/notifications';
 
 export async function GET(request: NextRequest) {
   try {
@@ -124,6 +125,17 @@ export async function POST(request: NextRequest) {
       max_balance,
       lot_size,
       active: true,
+    });
+
+    void recordNotification({
+      actor: 'admin',
+      actorId: decoded.userId,
+      type: 'admin.lot_size_created',
+      category: 'admin',
+      title: 'Lot size rule created',
+      message: `Admin created a lot size rule: balance ${min_balance}-${max_balance} → lot size ${lot_size}.`,
+      metadata: { ruleId: String(newRule._id), min_balance, max_balance, lot_size },
+      source: 'api/admin/lot-size',
     });
 
     return NextResponse.json(

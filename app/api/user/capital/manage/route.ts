@@ -3,6 +3,7 @@ import connectDB from '@/lib/db';
 import Broker from '@/models/Broker';
 import BotConfig from '@/models/BotConfig';
 import { getCurrentUser } from '@/lib/auth-helper';
+import { recordNotification } from '@/lib/notifications';
 
 /**
  * PUT /api/user/capital/manage
@@ -38,6 +39,17 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'No broker connection found' }, { status: 404 });
     }
 
+    void recordNotification({
+      userId: user._id,
+      actor: 'user',
+      type: body.active ? 'broker.enabled' : 'broker.disabled',
+      category: 'broker',
+      title: body.active ? 'Broker enabled' : 'Broker disabled',
+      message: `${user.userName} ${body.active ? 'enabled' : 'disabled'} their broker connection${broker.environment ? ` (${broker.environment})` : ''}.`,
+      metadata: { broker: 'capital.com', environment: broker.environment ?? null, active: body.active },
+      source: 'api/user/capital/manage',
+    });
+
     return NextResponse.json({ success: true, active: broker.status === 'active' });
   } catch (error) {
     console.error('Broker manage PUT error:', error);
@@ -63,6 +75,20 @@ export async function DELETE() {
       Broker.deleteOne({ userId: user._id, brokerName: 'capital.com' }),
       BotConfig.deleteOne({ userId: user._id }),
     ]);
+
+    void recordNotification({
+      userId: user._id,
+      actor: 'user',
+      type: 'broker.data_deleted',
+      category: 'broker',
+      title: 'Broker data deleted',
+      message: `${user.userName} permanently deleted their broker credentials and bot configuration.`,
+      metadata: {
+        broker: 'capital.com',
+        deleted: { broker: brokerRes.deletedCount > 0, botConfig: botRes.deletedCount > 0 },
+      },
+      source: 'api/user/capital/manage',
+    });
 
     return NextResponse.json({
       success: true,

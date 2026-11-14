@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   Menu,
   Sun,
@@ -11,6 +11,12 @@ import {
   Search,
   X,
   Coins,
+  Bot,
+  Landmark,
+  Settings2,
+  TrendingUp,
+  UserRound,
+  Rocket,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useTheme } from "next-themes";
@@ -39,11 +45,56 @@ interface UserData {
 
 interface NotificationItem {
   id: string;
+  type?: string;
+  category?: string;
   title: string;
   message?: string;
   time?: string;
   read?: boolean;
   href?: string;
+}
+
+interface ApiNotification {
+  id: string;
+  type: string;
+  category: string;
+  title: string;
+  message: string;
+  seen: boolean;
+  createdAt: string;
+}
+
+const CATEGORY_ICON_CLS: Record<string, string> = {
+  trading: "border-violet-500/30 bg-violet-500/10 text-violet-600 dark:text-violet-400",
+  broker: "border-sky-500/30 bg-sky-500/10 text-sky-600 dark:text-sky-400",
+  account: "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+  auth: "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400",
+  admin: "border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400",
+  system: "border-border/60 bg-muted/30 text-muted-foreground",
+};
+
+function notificationIcon(n: ApiNotification) {
+  const cls = `h-3.5 w-3.5 ${CATEGORY_ICON_CLS[n.category] ?? CATEGORY_ICON_CLS.system}`;
+  const wrap = `mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border ${CATEGORY_ICON_CLS[n.category] ?? CATEGORY_ICON_CLS.system}`;
+  if (n.type.startsWith("trade.")) return <span className={wrap}><TrendingUp className={cls} /></span>;
+  if (n.type.startsWith("bot.")) return <span className={wrap}><Bot className={cls} /></span>;
+  if (n.type.startsWith("broker.")) return <span className={wrap}><Landmark className={cls} /></span>;
+  if (n.type.startsWith("user.")) return <span className={wrap}><Rocket className={cls} /></span>;
+  if (n.type.startsWith("account.")) return <span className={wrap}><UserRound className={cls} /></span>;
+  if (n.type.startsWith("admin.")) return <span className={wrap}><Settings2 className={cls} /></span>;
+  return <span className={wrap}><Bell className={cls} /></span>;
+}
+
+function timeAgo(iso: string) {
+  const diff = Date.now() - new Date(iso).getTime();
+  const m = Math.floor(diff / 60_000);
+  if (m < 1) return "just now";
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 7) return `${d}d ago`;
+  return new Date(iso).toLocaleDateString();
 }
 
 export default function UserHeader({
@@ -82,6 +133,53 @@ export default function UserHeader({
   const [notifOpen, setNotifOpen] = useState(false);
   const notifRef = useRef<HTMLDivElement>(null);
 
+  /** Load unseen count + latest notifications from the NOTIFICATIONS feed. */
+  const loadNotifications = useCallback(async () => {
+    try {
+      const res = await fetch("/api/user/notifications?limit=8", { cache: "no-store" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return;
+
+      const items: NotificationItem[] = ((data.notifications ?? []) as ApiNotification[]).map((n) => ({
+        id: n.id,
+        type: n.type,
+        category: n.category,
+        title: n.title,
+        message: n.message,
+        time: timeAgo(n.createdAt),
+        read: n.seen === true,
+        href: "/UserDashboard/notifications",
+      }));
+      setNotifications(items);
+      setNotificationCount(
+        typeof data.unseenCount === "number"
+          ? data.unseenCount
+          : items.filter((i) => !i.read).length
+      );
+    } catch {
+      // Silent — badge just keeps its last value.
+    }
+  }, []);
+
+  /** Mark a single notification as seen (optimistic). */
+  const markNotificationSeen = useCallback(async (id: string) => {
+    setNotifications((prev) => {
+      const target = prev.find((n) => n.id === id);
+      if (!target || target.read) return prev;
+      setNotificationCount((c) => Math.max(0, c - 1));
+      return prev.map((n) => (n.id === id ? { ...n, read: true } : n));
+    });
+    try {
+      await fetch("/api/user/notifications", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+    } catch {
+      void loadNotifications();
+    }
+  }, [loadNotifications]);
+
   // Fetch user data on component mount
   useEffect(() => {
     const fetchData = async () => {
@@ -101,8 +199,8 @@ export default function UserHeader({
           // (e.g. userData.balance, userData.creditBalance)
           setCredits(Number(userData.credits) || 0);
 
-          // Fetch notification count
-          await fetchNotificationCount(userData._id);
+          // Fetch notification count + recent items
+          void loadNotifications();
         } else {
           console.error("Failed to fetch user data:", data.error);
         }
@@ -114,21 +212,14 @@ export default function UserHeader({
       }
     };
 
-    const fetchNotificationCount = async (userId: string) => {
-      try {
-        // TODO: Implement notification count when API endpoints are available
-        // Currently commented out due to missing API routes
-        setNotificationCount(0);
-        setNotifications([]);
-      } catch (error) {
-        console.error("Error fetching notification count:", error);
-        setNotificationCount(0);
-        setNotifications([]);
-      }
-    };
-
     fetchData();
-  }, []);
+  }, [loadNotifications]);
+
+  // Poll the notification feed so the badge stays fresh.
+  useEffect(() => {
+    const t = setInterval(() => void loadNotifications(), 30_000);
+    return () => clearInterval(t);
+  }, [loadNotifications]);
 
   // Close notification dropdown on outside click / Escape
   useEffect(() => {
@@ -191,10 +282,12 @@ export default function UserHeader({
   const defaultProfileImage = "https://github.com/shadcn.png";
 
   return (
-    <header className="relative h-15 lg:h-15 overflow-hidden border-b border-border flex items-center justify-between gap-4 px-4 sm:px-10 bg-background/80 backdrop-blur-md sticky top-0 z-50">
-      {/* soft purple glow — matches UserSidebar */}
-      <div className="pointer-events-none absolute -top-16 -left-16 h-48 w-48 rounded-full bg-violet-600/15 blur-[80px]" />
-      <div className="pointer-events-none absolute -bottom-16 -right-16 h-48 w-48 rounded-full bg-purple-600/10 blur-[80px]" />
+    <header className="relative h-15 lg:h-15 border-b border-border flex items-center justify-between gap-4 px-4 sm:px-10 bg-background/80 backdrop-blur-md sticky top-0 z-50">
+      {/* soft purple glow — matches UserSidebar (clipped to header bounds) */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute -top-16 -left-16 h-48 w-48 rounded-full bg-violet-600/15 blur-[80px]" />
+        <div className="absolute -bottom-16 -right-16 h-48 w-48 rounded-full bg-purple-600/10 blur-[80px]" />
+      </div>
 
       {/* Mobile search overlay */}
       {mobileSearchOpen && (
@@ -321,14 +414,14 @@ export default function UserHeader({
             aria-expanded={notifOpen}
             aria-label="Notifications"
             className={`p-2 rounded-xl relative cursor-pointer transition-colors ${notifOpen
-                ? "bg-gradient-to-r from-violet-600 to-purple-600 text-white shadow-lg shadow-violet-900/30"
+                ? "bg-secondary"
                 : "bg-secondary hover:bg-violet-500/15"
               }`}
           >
             <Bell className="h-5 w-5" />
 
             {!notificationLoading && notificationCount > 0 && (
-              <span className="absolute -top-1 -right-1 bg-gradient-to-r from-violet-600 to-purple-600 text-white text-[9px] font-black rounded-full min-w-[16px] h-4 px-1 flex items-center justify-center border-2 border-background leading-none">
+              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-black rounded-full min-w-[16px] h-4 px-1 flex items-center justify-center border-2 border-background leading-none">
                 {notificationCount > 9 ? "9+" : notificationCount}
               </span>
             )}
@@ -375,9 +468,13 @@ export default function UserHeader({
                       <li key={n.id}>
                         <Link
                           href={n.href || "/UserDashboard/notifications"}
-                          onClick={() => setNotifOpen(false)}
+                          onClick={() => {
+                            setNotifOpen(false);
+                            if (!n.read) void markNotificationSeen(n.id);
+                          }}
                           className="flex items-start gap-3 px-4 py-3 transition-colors hover:bg-violet-500/10"
                         >
+                          {notificationIcon(n as ApiNotification)}
                           <span
                             className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${n.read ? "bg-transparent" : "bg-violet-500"
                               }`}
@@ -410,7 +507,7 @@ export default function UserHeader({
               <Link
                 href="/UserDashboard/notifications"
                 onClick={() => setNotifOpen(false)}
-                className="group flex items-center justify-center gap-2 border-t border-border px-4 py-3 text-xs font-extrabold uppercase tracking-widest text-violet-600 transition-colors hover:bg-violet-500/10 dark:text-violet-400"
+                className="group flex items-center justify-center gap-2 border-t border-border px-4 py-3 text-xs font-extrabold text-violet-600 transition-colors dark:text-violet-400"
               >
                 View all notifications
                 <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-1" />

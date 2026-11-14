@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import jwt from 'jsonwebtoken';
 import PositionLimit from '@/models/PositionLimit';
 import User from '@/models/User';
+import { recordNotification } from '@/lib/notifications';
 
 export async function GET(request: NextRequest) {
   try {
@@ -131,6 +132,17 @@ export async function POST(request: NextRequest) {
       max_balance,
       max_positions,
       active: true,
+    });
+
+    void recordNotification({
+      actor: 'admin',
+      actorId: decoded.userId,
+      type: 'admin.position_limit_created',
+      category: 'admin',
+      title: 'Position limit rule created',
+      message: `Admin created a position limit rule: balance ${min_balance}-${max_balance} → max ${max_positions} positions.`,
+      metadata: { ruleId: String(newRule._id), min_balance, max_balance, max_positions },
+      source: 'api/admin/position-limits',
     });
 
     return NextResponse.json(

@@ -4,6 +4,7 @@ import { verifyToken } from '@/lib/auth';
 import User from '@/models/User';
 import connectDB from '@/lib/db';
 import { normalizePfpPath } from '@/lib/pfp';
+import { recordNotification } from '@/lib/notifications';
 
 export async function POST(request: NextRequest) {
   try {
@@ -50,6 +51,17 @@ export async function POST(request: NextRequest) {
         { status: 404 }
       );
     }
+
+    void recordNotification({
+      userId: decoded.userId,
+      actor: 'user',
+      type: 'account.avatar_updated',
+      category: 'account',
+      title: 'Profile image updated',
+      message: `${updatedUser.userName} changed their profile picture.`,
+      metadata: { username: updatedUser.userName, email: updatedUser.email },
+      source: 'api/user/update-profile-image',
+    });
 
     return NextResponse.json({
       success: true,

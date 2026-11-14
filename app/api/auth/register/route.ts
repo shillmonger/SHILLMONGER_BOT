@@ -5,6 +5,7 @@ import { hashPassword, generateVerificationToken } from '@/lib/auth';
 import { sendEmail, getVerificationEmail } from '@/lib/email';
 import { getAppUrl } from '@/lib/config';
 import { pickRandomPfp } from '@/lib/pfp';
+import { recordNotification } from '@/lib/notifications';
 
 export async function POST(request: NextRequest) {
   try {
@@ -87,6 +88,17 @@ export async function POST(request: NextRequest) {
     if (!emailSent) {
       console.error('Failed to send verification email to:', email);
     }
+
+    void recordNotification({
+      userId: user._id,
+      actor: 'user',
+      type: 'user.registered',
+      category: 'auth',
+      title: 'New user registered',
+      message: `Welcome — ${username} (${email}) created an account and a verification email was sent.`,
+      metadata: { username, email },
+      source: 'api/auth/register',
+    });
 
     return NextResponse.json(
       { 

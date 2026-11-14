@@ -4,6 +4,7 @@ import Broker from '@/models/Broker';
 import BotConfig from '@/models/BotConfig';
 import { getCurrentUser } from '@/lib/auth-helper';
 import { getSession, CapitalApiError } from '@/lib/capitalcom';
+import { recordNotification } from '@/lib/notifications';
 
 /**
  * GET /api/user/trading/environment
@@ -98,6 +99,7 @@ export async function PUT(request: NextRequest) {
       );
     }
 
+    const previousEnv = broker.environment ?? 'demo';
     await Broker.updateOne({ _id: broker._id }, { $set: { environment: env } });
     await BotConfig.findOneAndUpdate(
       { userId },
@@ -107,6 +109,17 @@ export async function PUT(request: NextRequest) {
       },
       { upsert: true, setDefaultsOnInsert: true }
     );
+
+    void recordNotification({
+      userId,
+      actor: 'user',
+      type: 'trading.environment_switched',
+      category: 'trading',
+      title: `Environment switched to ${env.toUpperCase()}`,
+      message: `${user.userName} switched trading environment ${previousEnv.toUpperCase()} → ${env.toUpperCase()}.`,
+      metadata: { from: previousEnv, to: env },
+      source: 'api/user/trading/environment',
+    });
 
     return NextResponse.json({ success: true, environment: env });
   } catch (error) {
